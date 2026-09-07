@@ -14,6 +14,12 @@ export default function Home() {
   const [password, setPassword] = useState('');
   const [searchTag, setSearchTag] = useState('');
 
+  // Post creation state
+  const [file, setFile] = useState(null);
+  const [caption, setCaption] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [posts, setPosts] = useState([]);
+
   useEffect(() => {
     const getSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -25,14 +31,28 @@ export default function Home() {
       setUser(session?.user || null);
     });
 
+    fetchPosts();
+
     return () => subscription.unsubscribe();
   }, []);
+
+  // Fetch posts from Supabase database
+  const fetchPosts = async () => {
+    const { data, error } = await supabase
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setPosts(data);
+    }
+  };
 
   const handleSignUp = async (e) => {
     e.preventDefault();
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) alert(error.message);
-    else alert('Check your email for the confirmation link!');
+    else alert('Account created! You can now sign in.');
   };
 
   const handleSignIn = async (e) => {
@@ -45,6 +65,53 @@ export default function Home() {
     await supabase.auth.signOut();
   };
 
+  // Upload Video Handler
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!file || !user) {
+      alert('Please select a video file and ensure you are logged in.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+
+      // 1. Upload video file to Supabase Storage Bucket ('videos')
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get Public URL of uploaded video
+      const { data: publicUrlData } = supabase.storage
+        .from('videos')
+        .getPublicUrl(filePath);
+
+      const videoUrl = publicUrlData.publicUrl;
+
+      // 3. Insert record into 'posts' database table
+      const { error: insertError } = await supabase
+        .from('posts')
+        .insert([{ user_id: user.id, video_url: videoUrl, caption }]);
+
+      if (insertError) throw insertError;
+
+      alert('Post created successfully!');
+      setCaption('');
+      setFile(null);
+      fetchPosts(); // Refresh feed
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -53,17 +120,54 @@ export default function Home() {
       </header>
 
       <main style={styles.mainContent}>
+        {/* ROOM 1: GENERAL FEED */}
         {activeTab === 'general' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>General Feed</h2>
-            <div style={styles.feedCard}>
-              <p><strong>@creator_one</strong></p>
-              <div style={styles.videoPlaceholder}>[ Video Clip Placeholder ]</div>
-              <p>Testing out the new Kinetix general feed! 🔥</p>
-            </div>
+
+            {/* Video Upload Form for Logged In Users */}
+            {user ? (
+              <form onSubmit={handleUpload} style={styles.uploadCard}>
+                <h3>Create a Post</h3>
+                <input 
+                  type="file" 
+                  accept="video/*" 
+                  onChange={(e) => setFile(e.target.files[0])} 
+                  style={styles.fileInput}
+                  required
+                />
+                <input 
+                  type="text" 
+                  placeholder="Write a caption... #hashtag" 
+                  value={caption} 
+                  onChange={(e) => setCaption(e.target.value)} 
+                  style={styles.input} 
+                />
+                <button type="submit" disabled={uploading} style={styles.primaryBtn}>
+                  {uploading ? 'Uploading...' : 'Post Video'}
+                </button>
+              </form>
+            ) : (
+              <div style={styles.noticeBox}>
+                <p>Log in from the Profile tab to post videos!</p>
+              </div>
+            )}
+
+            {/* Display Video Posts */}
+            {posts.length === 0 ? (
+              <p style={{ color: '#94a3b8', textAlign: 'center' }}>No posts yet. Be the first to share!</p>
+            ) : (
+              posts.map((post) => (
+                <div key={post.id} style={styles.feedCard}>
+                  <video src={post.video_url} controls style={styles.videoPlayer} />
+                  <p style={{ marginTop: '8px' }}>{post.caption}</p>
+                </div>
+              ))
+            )}
           </section>
         )}
 
+        {/* ROOM 2: HASHTAG SEARCH */}
         {activeTab === 'hashtags' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Hashtag Search</h2>
@@ -78,6 +182,7 @@ export default function Home() {
           </section>
         )}
 
+        {/* ROOM 3: DIRECT MESSAGES */}
         {activeTab === 'dms' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Direct Messages</h2>
@@ -91,6 +196,7 @@ export default function Home() {
           </section>
         )}
 
+        {/* ROOM 4: PROFILE */}
         {activeTab === 'profile' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Profile & Account</h2>
@@ -143,12 +249,15 @@ const styles = {
   mainContent: { padding: '20px', maxWidth: '500px', margin: '0 auto' },
   roomContainer: { display: 'flex', flexDirection: 'column', gap: '15px' },
   roomTitle: { fontSize: '18px', borderBottom: '1px solid #334155', paddingBottom: '8px' },
-  feedCard: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px' },
-  videoPlaceholder: { height: '250px', backgroundColor: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', color: '#94a3b8' },
-  input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#1e293b', color: '#fff', boxSizing: 'border-box' },
+  feedCard: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '8px', display: 'flex', flexDirection: 'column' },
+  uploadCard: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px' },
+  videoPlayer: { width: '100%', borderRadius: '6px', maxHeight: '400px', backgroundColor: '#000' },
+  input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
+  fileInput: { color: '#94a3b8' },
   authForm: { display: 'flex', flexDirection: 'column', gap: '10px' },
-  primaryBtn: { flex: 1, backgroundColor: '#22c55e', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
-  secondaryBtn: { flex: 1, backgroundColor: '#334155', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer' },
+  primaryBtn: { backgroundColor: '#22c55e', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
+  secondaryBtn: { backgroundColor: '#334155', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer' },
+  noticeBox: { padding: '12px', backgroundColor: '#1e293b', borderRadius: '6px', textAlign: 'center', color: '#94a3b8' },
   chatBox: { padding: '20px', backgroundColor: '#1e293b', borderRadius: '8px', textAlign: 'center', color: '#94a3b8' },
   navDock: { position: 'fixed', bottom: 0, left: 0, right: 0, height: '60px', backgroundColor: '#020617', display: 'flex', justifyContent: 'space-around', alignItems: 'center', borderTop: '1px solid #1e293b' },
   tab: { background: 'none', border: 'none', color: '#64748b', fontSize: '14px', cursor: 'pointer' },
