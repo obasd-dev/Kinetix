@@ -3,20 +3,18 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase Client using the keys set in Vercel
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('general'); // 'general', 'hashtags', 'dms', 'profile'
+  const [activeTab, setActiveTab] = useState('general');
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [searchTag, setSearchTag] = useState('');
 
   useEffect(() => {
-    // Check active user session on load
     const getSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user || null);
@@ -49,15 +47,12 @@ export default function Home() {
 
   return (
     <div style={styles.container}>
-      {/* Top Header */}
       <header style={styles.header}>
         <h1 style={styles.logo}>KINETIX</h1>
         {user && <button onClick={handleSignOut} style={styles.signOutBtn}>Logout</button>}
       </header>
 
-      {/* Main Room Content Display */}
       <main style={styles.mainContent}>
-        {/* ROOM 1: GENERAL POSTING ROOM */}
         {activeTab === 'general' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>General Feed</h2>
@@ -69,7 +64,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* ROOM 2: HASHTAG SEARCH ROOM */}
         {activeTab === 'hashtags' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Hashtag Search</h2>
@@ -84,7 +78,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* ROOM 3: MUTUAL FOLLOWERS CHAT ROOM */}
         {activeTab === 'dms' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Direct Messages</h2>
@@ -98,7 +91,6 @@ export default function Home() {
           </section>
         )}
 
-        {/* ROOM 4: PROFILE SETUP & AUTH ROOM */}
         {activeTab === 'profile' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Profile & Account</h2>
@@ -133,7 +125,6 @@ export default function Home() {
         )}
       </main>
 
-      {/* Bottom Navigation Dock */}
       <nav style={styles.navDock}>
         <button onClick={() => setActiveTab('general')} style={activeTab === 'general' ? styles.activeTab : styles.tab}>Feed</button>
         <button onClick={() => setActiveTab('hashtags')} style={activeTab === 'hashtags' ? styles.activeTab : styles.tab}>Search</button>
@@ -144,7 +135,6 @@ export default function Home() {
   );
 }
 
-// Dark Slate Theme Styles (Designed to not emulate TikTok or Instagram)
 const styles = {
   container: { backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh', paddingBottom: '70px', fontFamily: 'sans-serif' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid #1e293b' },
