@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = 'https://qtjehqjnazsxvdzqtkgh.supabase.co';
+const supabaseAnonKey = 'sb_publishable_sqVY-eC8omT648v-K5hiUw_u03LW-3r';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function Home() {
@@ -50,6 +50,10 @@ export default function Home() {
 
   const handleSignUp = async (e) => {
     e.preventDefault();
+    if (!email || !password) {
+      alert('Please enter both an email and password.');
+      return;
+    }
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) alert(error.message);
     else alert('Account created! You can now sign in.');
@@ -57,6 +61,10 @@ export default function Home() {
 
   const handleSignIn = async (e) => {
     e.preventDefault();
+    if (!email || !password) {
+      alert('Please enter both an email and password.');
+      return;
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) alert(error.message);
   };
