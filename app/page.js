@@ -14,6 +14,7 @@ export default function Home() {
   // Auth State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Profile Setup State
   const [username, setUsername] = useState('');
@@ -337,13 +338,25 @@ export default function Home() {
                   onChange={(e) => setEmail(e.target.value)} 
                   style={styles.input} 
                 />
-                <input 
-                  type="password" 
-                  placeholder="Password" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  style={styles.input} 
-                />
+                
+                {/* Password Input with Eye Toggle */}
+                <div style={styles.passwordWrapper}>
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    placeholder="Password" 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    style={styles.passwordInput} 
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => setShowPassword(!showPassword)} 
+                    style={styles.eyeBtn}
+                  >
+                    {showPassword ? '👁️' : '🙈'}
+                  </button>
+                </div>
+
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button onClick={handleSignIn} style={styles.primaryBtn}>Sign In</button>
                   <button onClick={handleSignUp} style={styles.secondaryBtn}>Sign Up</button>
@@ -545,6 +558,9 @@ const styles = {
   input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
   fileInput: { color: '#94a3b8' },
   authForm: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  passwordWrapper: { position: 'relative', display: 'flex', alignItems: 'center', width: '100%' },
+  passwordInput: { width: '100%', padding: '10px', paddingRight: '40px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
+  eyeBtn: { position: 'absolute', right: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0' },
   profileBox: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '15px' },
   primaryBtn: { backgroundColor: '#22c55e', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
   secondaryBtn: { backgroundColor: '#334155', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer' },
