@@ -58,10 +58,30 @@ export default function Home() {
   useEffect(() => {
     if (user) {
       fetchUserLikes();
+      fetchUserProfile();
     } else {
       setUserLikes([]);
+      setUsername('');
+      setBio('');
+      setWebsite('');
     }
   }, [user]);
+
+  // Fetch saved user profile data
+  const fetchUserProfile = async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('username, bio, website')
+      .eq('id', user.id)
+      .single();
+
+    if (!error && data) {
+      setUsername(data.username || '');
+      setBio(data.bio || '');
+      setWebsite(data.website || '');
+    }
+  };
 
   // Fetch all posts and count total likes/comments
   const fetchPosts = async () => {
@@ -148,13 +168,28 @@ export default function Home() {
   };
 
   // ----------------------------------------------------
+  // AUTH HANDLERS
+  // ----------------------------------------------------
 
   const handleSignUp = async (e) => {
     e.preventDefault();
     if (!email || !password) return alert('Please enter email and password.');
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) alert(error.message);
-    else alert('Account created! You can now sign in.');
+
+    const { data, error } = await supabase.auth.signUp({ email, password });
+
+    if (error) {
+      alert(error.message);
+    } else if (data?.session) {
+      // Confirmation is disabled; user logged in immediately
+      alert('Account created and logged in!');
+      setEmail('');
+      setPassword('');
+    } else {
+      // Email confirmation requirement is enabled
+      alert('Account created! Please check your email inbox (and spam) to confirm your account before signing in.');
+      setEmail('');
+      setPassword('');
+    }
   };
 
   const handleSignIn = async (e) => {
@@ -162,6 +197,10 @@ export default function Home() {
     if (!email || !password) return alert('Please enter email and password.');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) alert(error.message);
+    else {
+      setEmail('');
+      setPassword('');
+    }
   };
 
   const handleSignOut = async () => {
@@ -358,8 +397,8 @@ export default function Home() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <button onClick={handleSignIn} style={styles.primaryBtn}>Sign In</button>
-                  <button onClick={handleSignUp} style={styles.secondaryBtn}>Sign Up</button>
+                  <button type="button" onClick={handleSignIn} style={styles.primaryBtn}>Sign In</button>
+                  <button type="button" onClick={handleSignUp} style={styles.secondaryBtn}>Sign Up</button>
                 </div>
               </form>
             ) : (
