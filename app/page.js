@@ -23,7 +23,7 @@ export default function Home() {
 
   // Post & Article Creation State
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [postType, setPostType] = useState('media'); // 'media' or 'article'
+  const [postType, setPostType] = useState('media');
   const [file, setFile] = useState(null);
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -32,6 +32,12 @@ export default function Home() {
   const [posts, setPosts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [profileSubTab, setProfileSubTab] = useState('posts');
+
+  // Likes & Comments Interactive State
+  const [userLikes, setUserLikes] = useState([]); // List of post IDs the logged-in user liked
+  const [activeCommentPostId, setActiveCommentPostId] = useState(null); // Which post's comments are open
+  const [comments, setComments] = useState([]);
+  const [newCommentText, setNewCommentText] = useState('');
 
   useEffect(() => {
     const getSession = async () => {
@@ -48,10 +54,19 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      fetchUserLikes();
+    } else {
+      setUserLikes([]);
+    }
+  }, [user]);
+
+  // Fetch all posts and count total likes/comments
   const fetchPosts = async () => {
     const { data, error } = await supabase
       .from('posts')
-      .select('*')
+      .select('*, likes(id), comments(id)')
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -59,7 +74,80 @@ export default function Home() {
     }
   };
 
-  // Auth Handlers
+  // Fetch posts liked by current user
+  const fetchUserLikes = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('likes')
+      .select('post_id')
+      .eq('user_id', user.id);
+
+    if (data) {
+      setUserLikes(data.map(l => l.post_id));
+    }
+  };
+
+  // ----------------------------------------------------
+  // STEP 2 FUNCTIONS: LIKE & COMMENT HANDLERS
+  // ----------------------------------------------------
+
+  const handleLike = async (postId) => {
+    if (!user) return alert('Please log in to like posts.');
+
+    const isLiked = userLikes.includes(postId);
+
+    if (isLiked) {
+      // Remove Like
+      await supabase
+        .from('likes')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('post_id', postId);
+
+      setUserLikes(prev => prev.filter(id => id !== postId));
+    } else {
+      // Add Like
+      await supabase
+        .from('likes')
+        .insert([{ user_id: user.id, post_id: postId }]);
+
+      setUserLikes(prev => [...prev, postId]);
+    }
+
+    fetchPosts(); // Refresh counters
+  };
+
+  const handleOpenComments = async (postId) => {
+    setActiveCommentPostId(postId);
+    const { data } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (data) setComments(data);
+  };
+
+  const handleAddComment = async (e) => {
+    e.preventDefault();
+    if (!user) return alert('Please log in to comment.');
+    if (!newCommentText.trim()) return;
+
+    const { error } = await supabase
+      .from('comments')
+      .insert([{ user_id: user.id, post_id: activeCommentPostId, content: newCommentText }]);
+
+    if (error) {
+      alert(error.message);
+    } else {
+      setNewCommentText('');
+      handleOpenComments(activeCommentPostId); // Refresh comments in popup
+      fetchPosts(); // Refresh comment count on post feed
+    }
+  };
+
+  // ----------------------------------------------------
+
   const handleSignUp = async (e) => {
     e.preventDefault();
     if (!email || !password) return alert('Please enter email and password.');
@@ -80,7 +168,6 @@ export default function Home() {
     setShowSettingsMenu(false);
   };
 
-  // Profile Save Handler
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!user) return;
@@ -92,7 +179,6 @@ export default function Home() {
     else alert('Profile updated successfully!');
   };
 
-  // Create Post / Article Handler
   const handleCreatePost = async (e) => {
     e.preventDefault();
     if (!user) return alert('You must be logged in.');
@@ -146,46 +232,61 @@ export default function Home() {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <header style={styles.header}>
         <h1 style={styles.logo}>KINETIX</h1>
       </header>
 
-      {/* Main Content Area */}
       <main style={styles.mainContent}>
-        {/* 1. HOME TAB (Global Feed) */}
+        {/* HOME TAB */}
         {activeTab === 'home' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Home Feed</h2>
             {posts.length === 0 ? (
               <p style={styles.emptyText}>No posts yet. Be the first to share!</p>
             ) : (
-              posts.map((post) => (
-                <div key={post.id} style={styles.feedCard}>
-                  {post.post_type === 'article' ? (
-                    <div style={styles.articleBadge}>Article</div>
-                  ) : null}
-                  
-                  {post.video_url && (
-                    <video src={post.video_url} controls style={styles.videoPlayer} />
-                  )}
-                  
-                  <p style={styles.captionText}>{post.caption}</p>
+              posts.map((post) => {
+                const isLiked = userLikes.includes(post.id);
+                const likeCount = post.likes ? post.likes.length : 0;
+                const commentCount = post.comments ? post.comments.length : 0;
 
-                  {/* Social Interactions */}
-                  <div style={styles.interactionRow}>
-                    <button style={styles.actionBtn}>❤️ Like</button>
-                    <button style={styles.actionBtn}>💬 Comment</button>
-                    <button style={styles.actionBtn}>🔄 Repost</button>
-                    <button style={styles.actionBtn}>🔗 Share</button>
+                return (
+                  <div key={post.id} style={styles.feedCard}>
+                    {post.post_type === 'article' && (
+                      <div style={styles.articleBadge}>Article</div>
+                    )}
+                    
+                    {post.video_url && (
+                      <video src={post.video_url} controls style={styles.videoPlayer} />
+                    )}
+                    
+                    <p style={styles.captionText}>{post.caption}</p>
+
+                    {/* Social Interaction Bar */}
+                    <div style={styles.interactionRow}>
+                      <button 
+                        onClick={() => handleLike(post.id)} 
+                        style={{ ...styles.actionBtn, color: isLiked ? '#ef4444' : '#94a3b8' }}
+                      >
+                        {isLiked ? '❤️' : '🤍'} {likeCount}
+                      </button>
+
+                      <button 
+                        onClick={() => handleOpenComments(post.id)} 
+                        style={styles.actionBtn}
+                      >
+                        💬 {commentCount}
+                      </button>
+
+                      <button style={styles.actionBtn}>🔄 Share</button>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </section>
         )}
 
-        {/* 2. SEARCH TAB (Profiles & Hashtags) */}
+        {/* SEARCH TAB */}
         {activeTab === 'search' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Search Profiles & Content</h2>
@@ -208,7 +309,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* 3. CHATS TAB */}
+        {/* CHATS TAB */}
         {activeTab === 'dms' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Direct Messages</h2>
@@ -222,7 +323,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* 4. PROFILE TAB */}
+        {/* PROFILE TAB */}
         {activeTab === 'profile' && (
           <section style={styles.roomContainer}>
             <h2 style={styles.roomTitle}>Profile & Setup</h2>
@@ -250,7 +351,6 @@ export default function Home() {
               </form>
             ) : (
               <div>
-                {/* Profile Setup Box */}
                 <form onSubmit={handleSaveProfile} style={styles.profileBox}>
                   <h3>Edit Profile Details</h3>
                   <input 
@@ -279,7 +379,6 @@ export default function Home() {
                   <button type="submit" style={styles.primaryBtn}>Save Profile</button>
                 </form>
 
-                {/* Sub-tab Switcher: Posts vs Articles */}
                 <div style={styles.subTabRow}>
                   <button 
                     onClick={() => setProfileSubTab('posts')}
@@ -295,7 +394,6 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* User Content Feed */}
                 {posts
                   .filter(p => p.user_id === user.id && (profileSubTab === 'articles' ? p.post_type === 'article' : p.post_type !== 'article'))
                   .map(post => (
@@ -307,7 +405,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Unique Settings Option: Bottom Left Corner Button */}
             {user && (
               <div style={styles.bottomLeftMenuWrapper}>
                 <button 
@@ -324,7 +421,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Create Post Action Button (Bottom Center of Profile) */}
             {user && (
               <div style={styles.createPostContainer}>
                 <button onClick={() => setShowCreateModal(true)} style={styles.createPostBtn}>
@@ -336,7 +432,42 @@ export default function Home() {
         )}
       </main>
 
-      {/* Creation Modal (Post or 500-char Article) */}
+      {/* COMMENTS MODAL */}
+      {activeCommentPostId && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>Comments</h3>
+              <button onClick={() => setActiveCommentPostId(null)} style={styles.closeBtn}>✕</button>
+            </div>
+
+            <div style={styles.commentsList}>
+              {comments.length === 0 ? (
+                <p style={{ color: '#94a3b8', fontSize: '14px' }}>No comments yet. Write the first one!</p>
+              ) : (
+                comments.map(c => (
+                  <div key={c.id} style={styles.commentItem}>
+                    <p style={{ margin: 0, fontSize: '13px' }}>{c.content}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <form onSubmit={handleAddComment} style={{ display: 'flex', gap: '8px' }}>
+              <input 
+                type="text" 
+                placeholder="Write a comment..." 
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                style={styles.input}
+              />
+              <button type="submit" style={styles.primaryBtn}>Send</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE POST MODAL */}
       {showCreateModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
@@ -388,7 +519,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Navigation Dock */}
+      {/* NAV DOCK */}
       <nav style={styles.navDock}>
         <button onClick={() => setActiveTab('home')} style={activeTab === 'home' ? styles.activeTab : styles.tab}>Home</button>
         <button onClick={() => setActiveTab('search')} style={activeTab === 'search' ? styles.activeTab : styles.tab}>Search</button>
@@ -409,14 +540,14 @@ const styles = {
   feedCard: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' },
   videoPlayer: { width: '100%', borderRadius: '6px', maxHeight: '350px', backgroundColor: '#000' },
   captionText: { fontSize: '14px', lineHeight: '1.4' },
-  interactionRow: { display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #334155', paddingTop: '10px', marginTop: '5px' },
-  actionBtn: { background: 'none', border: 'none', color: '#94a3b8', fontSize: '12px', cursor: 'pointer' },
+  interactionRow: { display: 'flex', justifyContent: 'space-around', borderTop: '1px solid #334155', paddingTop: '10px', marginTop: '5px' },
+  actionBtn: { background: 'none', border: 'none', color: '#94a3b8', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold' },
   input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
   fileInput: { color: '#94a3b8' },
   authForm: { display: 'flex', flexDirection: 'column', gap: '10px' },
   profileBox: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '15px' },
-  primaryBtn: { backgroundColor: '#22c55e', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', flex: 1 },
-  secondaryBtn: { backgroundColor: '#334155', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', flex: 1 },
+  primaryBtn: { backgroundColor: '#22c55e', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
+  secondaryBtn: { backgroundColor: '#334155', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer' },
   dangerBtn: { backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', width: '100%' },
   emptyText: { color: '#94a3b8', textAlign: 'center', marginTop: '20px' },
   chatBox: { padding: '20px', backgroundColor: '#1e293b', borderRadius: '8px', textAlign: 'center', color: '#94a3b8' },
@@ -432,12 +563,14 @@ const styles = {
   createPostContainer: { display: 'flex', justifyContent: 'center', margin: '20px 0' },
   createPostBtn: { backgroundColor: '#22c55e', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: '25px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)' },
   
-  // Modal Styles
+  // Modal & Comments
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   modalCard: { backgroundColor: '#1e293b', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '10px' },
   closeBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' },
+  commentsList: { maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', margin: '10px 0' },
+  commentItem: { backgroundColor: '#0f172a', padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155' },
 
-  // Navigation Dock
+  // Nav Dock
   navDock: { position: 'fixed', bottom: 0, left: 0, right: 0, height: '60px', backgroundColor: '#020617', display: 'flex', justifyContent: 'space-around', alignItems: 'center', borderTop: '1px solid #1e293b', zIndex: 40 },
   tab: { background: 'none', border: 'none', color: '#64748b', fontSize: '14px', cursor: 'pointer' },
   activeTab: { background: 'none', border: 'none', color: '#22c55e', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }
