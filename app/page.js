@@ -13,7 +13,7 @@ export default function Home() {
 
   // Native PWA App Install State
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isInstallable, setIsInstallable] = useState(false);
 
   // Auth State
   const [email, setEmail] = useState('');
@@ -48,12 +48,21 @@ export default function Home() {
   const [comments, setComments] = useState([]);
   const [newCommentText, setNewCommentText] = useState('');
 
-  // Handle Mobile PWA Native Installation Event
+  // Selected Post Management Modal State (Edit/Delete/Reactions)
+  const [selectedPost, setSelectedPost] = useState(null);
+  const [editCaption, setEditCaption] = useState('');
+  const [postLikers, setPostLikers] = useState([]);
+
+  // Public User Profile View Modal State
+  const [viewingProfile, setViewingProfile] = useState(null);
+  const [userFollows, setUserFollows] = useState([]);
+
+  // PWA Install Event Listener
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      setShowInstallBanner(true);
+      setIsInstallable(true);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -63,12 +72,15 @@ export default function Home() {
     };
   }, []);
 
-  const handleInstallApp = async () => {
-    if (!deferredPrompt) return;
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) {
+      alert('To install on iOS: Tap the Share icon at the bottom of Safari, then choose "Add to Home Screen". On Chrome, use the browser menu (⋮) -> "Install App".');
+      return;
+    }
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') {
-      setShowInstallBanner(false);
+      setIsInstallable(false);
     }
     setDeferredPrompt(null);
   };
@@ -93,8 +105,10 @@ export default function Home() {
     if (user) {
       fetchUserLikes();
       fetchUserProfile();
+      fetchUserFollows();
     } else {
       setUserLikes([]);
+      setUserFollows([]);
       setUsername('');
       setBio('');
       setWebsite('');
@@ -123,59 +137,57 @@ export default function Home() {
   };
 
   const fetchProfiles = async () => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*');
-
-    if (!error && data) {
-      setProfiles(data);
-    }
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (!error && data) setProfiles(data);
   };
 
   const fetchPosts = async () => {
     const { data, error } = await supabase
       .from('posts')
-      .select('*, likes(id), comments(id), profiles(username)')
+      .select('*, likes(id, user_id), comments(id, content, created_at, profiles(username)), profiles(username, bio, website)')
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      setPosts(data);
-    }
+    if (!error && data) setPosts(data);
   };
 
   const fetchUserLikes = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('likes')
-      .select('post_id')
-      .eq('user_id', user.id);
+    const { data } = await supabase.from('likes').select('post_id').eq('user_id', user.id);
+    if (data) setUserLikes(data.map(l => l.post_id));
+  };
 
-    if (data) {
-      setUserLikes(data.map(l => l.post_id));
+  const fetchUserFollows = async () => {
+    if (!user) return;
+    const { data } = await supabase.from('follows').select('following_id').eq('follower_id', user.id);
+    if (data) setUserFollows(data.map(f => f.following_id));
+  };
+
+  const handleToggleFollow = async (targetUserId) => {
+    if (!user) return alert('Please log in to follow creators.');
+    if (user.id === targetUserId) return alert("You cannot follow yourself.");
+
+    const isFollowing = userFollows.includes(targetUserId);
+
+    if (isFollowing) {
+      await supabase.from('follows').delete().eq('follower_id', user.id).eq('following_id', targetUserId);
+      setUserFollows(prev => prev.filter(id => id !== targetUserId));
+    } else {
+      await supabase.from('follows').insert([{ follower_id: user.id, following_id: targetUserId }]);
+      setUserFollows(prev => [...prev, targetUserId]);
     }
   };
 
   const handleLike = async (postId) => {
     if (!user) return alert('Please log in to like posts.');
-
     const isLiked = userLikes.includes(postId);
 
     if (isLiked) {
-      await supabase
-        .from('likes')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('post_id', postId);
-
+      await supabase.from('likes').delete().eq('user_id', user.id).eq('post_id', postId);
       setUserLikes(prev => prev.filter(id => id !== postId));
     } else {
-      await supabase
-        .from('likes')
-        .insert([{ user_id: user.id, post_id: postId }]);
-
+      await supabase.from('likes').insert([{ user_id: user.id, post_id: postId }]);
       setUserLikes(prev => [...prev, postId]);
     }
-
     fetchPosts();
   };
 
@@ -183,7 +195,7 @@ export default function Home() {
     setActiveCommentPostId(postId);
     const { data } = await supabase
       .from('comments')
-      .select('*')
+      .select('*, profiles(username)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true });
 
@@ -205,6 +217,62 @@ export default function Home() {
       setNewCommentText('');
       handleOpenComments(activeCommentPostId);
       fetchPosts();
+    }
+  };
+
+  const handleOpenPostDetails = async (post) => {
+    setSelectedPost(post);
+    setEditCaption(post.caption || '');
+
+    // Fetch reactions/likers for this post
+    const { data } = await supabase
+      .from('likes')
+      .select('user_id, profiles(username)')
+      .eq('post_id', post.id);
+
+    if (data) {
+      setPostLikers(data.map(d => d.profiles?.username || 'User'));
+    }
+  };
+
+  const handleUpdatePost = async () => {
+    if (!selectedPost) return;
+    const { error } = await supabase
+      .from('posts')
+      .update({ caption: editCaption })
+      .eq('id', selectedPost.id);
+
+    if (error) {
+      alert(error.message);
+    } else {
+      alert('Post updated successfully!');
+      setSelectedPost(null);
+      fetchPosts();
+    }
+  };
+
+  const handleDeletePost = async () => {
+    if (!selectedPost) return;
+    if (!confirm('Are you sure you want to delete this post?')) return;
+
+    const { error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', selectedPost.id);
+
+    if (error) {
+      alert(error.message);
+    } else {
+      alert('Post deleted!');
+      setSelectedPost(null);
+      fetchPosts();
+    }
+  };
+
+  const openUserProfileModal = async (userId) => {
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    if (data) {
+      setViewingProfile(data);
     }
   };
 
@@ -385,17 +453,10 @@ export default function Home() {
     <div style={styles.container}>
       <header style={styles.header}>
         <h1 style={styles.logo}>KINETIX</h1>
+        <button onClick={handleInstallClick} style={styles.headerInstallBtn}>
+          📲 Install App
+        </button>
       </header>
-
-      {showInstallBanner && (
-        <div style={styles.installBanner}>
-          <div style={{ fontSize: '13px', fontWeight: 'bold' }}>📲 Install KINETIX App for Mobile</div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={handleInstallApp} style={styles.installBtn}>Install</button>
-            <button onClick={() => setShowInstallBanner(false)} style={styles.dismissBtn}>✕</button>
-          </div>
-        </div>
-      )}
 
       <main style={styles.mainContent}>
         {/* HOME TAB */}
@@ -413,7 +474,12 @@ export default function Home() {
                 return (
                   <div key={post.id} style={styles.feedCard}>
                     <div style={styles.feedCardHeader}>
-                      <span style={styles.feedUsername}>@{post.profiles?.username || 'user'}</span>
+                      <span 
+                        onClick={() => openUserProfileModal(post.user_id)} 
+                        style={styles.clickableUsername}
+                      >
+                        @{post.profiles?.username || 'user'}
+                      </span>
                       {post.post_type === 'article' && (
                         <div style={styles.articleBadge}>Article</div>
                       )}
@@ -511,7 +577,11 @@ export default function Home() {
                 <h4 style={styles.sectionHeading}>Profiles</h4>
                 <div style={styles.profileResultsGrid}>
                   {filteredProfiles.map((p) => (
-                    <div key={p.id} style={styles.profileResultCard}>
+                    <div 
+                      key={p.id} 
+                      onClick={() => openUserProfileModal(p.id)}
+                      style={styles.clickableProfileResultCard}
+                    >
                       <div style={styles.miniAvatar}>
                         {p.username ? p.username.charAt(0).toUpperCase() : 'U'}
                       </div>
@@ -519,6 +589,7 @@ export default function Home() {
                         <div style={styles.profileCardName}>@{p.username || 'user'}</div>
                         <div style={styles.profileCardBio}>{p.bio || 'No bio'}</div>
                       </div>
+                      <button style={styles.smallViewBtn}>View Profile</button>
                     </div>
                   ))}
                 </div>
@@ -539,7 +610,12 @@ export default function Home() {
                       return (
                         <div key={post.id} style={styles.searchGridCard}>
                           <div style={styles.searchCardHeader}>
-                            <span style={styles.searchAuthor}>@{post.profiles?.username || 'user'}</span>
+                            <span 
+                              onClick={() => openUserProfileModal(post.user_id)} 
+                              style={styles.clickableUsername}
+                            >
+                              @{post.profiles?.username || 'user'}
+                            </span>
                             {isVideo ? (
                               <span style={styles.typeBadgeVideo}>📹 VIDEO</span>
                             ) : post.post_type === 'article' ? (
@@ -574,8 +650,12 @@ export default function Home() {
                           )}
 
                           <div style={styles.searchGridFooter}>
-                            <span>❤️ {post.likes ? post.likes.length : 0}</span>
-                            <span>💬 {post.comments ? post.comments.length : 0}</span>
+                            <span onClick={() => handleLike(post.id)} style={{ cursor: 'pointer' }}>
+                              ❤️ {post.likes ? post.likes.length : 0}
+                            </span>
+                            <span onClick={() => handleOpenComments(post.id)} style={{ cursor: 'pointer' }}>
+                              💬 {post.comments ? post.comments.length : 0}
+                            </span>
                           </div>
                         </div>
                       );
@@ -685,7 +765,7 @@ export default function Home() {
                         <span style={styles.statLabel}>Followers</span>
                       </div>
                       <div style={styles.statBox}>
-                        <span style={styles.statNumber}>0</span>
+                        <span style={styles.statNumber}>{userFollows.length}</span>
                         <span style={styles.statLabel}>Following</span>
                       </div>
                     </div>
@@ -757,7 +837,11 @@ export default function Home() {
                   {userPosts
                     .filter(p => profileSubTab === 'articles' ? p.post_type === 'article' : p.post_type !== 'article')
                     .map(post => (
-                      <div key={post.id} style={styles.gridItem}>
+                      <div 
+                        key={post.id} 
+                        onClick={() => handleOpenPostDetails(post)} 
+                        style={styles.gridItemClickable}
+                      >
                         {post.video_url ? (
                           post.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
                             <video src={post.video_url} style={styles.gridMedia} />
@@ -828,6 +912,112 @@ export default function Home() {
         </button>
       </nav>
 
+      {/* PUBLIC USER PROFILE MODAL */}
+      {viewingProfile && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>@{viewingProfile.username || 'user'}</h3>
+              <button onClick={() => setViewingProfile(null)} style={styles.closeBtn}>✕</button>
+            </div>
+
+            <p style={{ color: '#cbd5e1', fontSize: '13px', margin: '8px 0' }}>{viewingProfile.bio || 'No bio provided.'}</p>
+            {viewingProfile.website && (
+              <a href={viewingProfile.website} target="_blank" rel="noreferrer" style={styles.proWebsite}>
+                🔗 {viewingProfile.website}
+              </a>
+            )}
+
+            {user && user.id !== viewingProfile.id && (
+              <button 
+                onClick={() => handleToggleFollow(viewingProfile.id)}
+                style={userFollows.includes(viewingProfile.id) ? styles.secondaryBtn : styles.primaryBtn}
+              >
+                {userFollows.includes(viewingProfile.id) ? 'Following ✓' : 'Follow +'}
+              </button>
+            )}
+
+            <h4 style={{ ...styles.sectionHeading, marginTop: '16px' }}>Posts by @{viewingProfile.username}</h4>
+            <div style={styles.mediaGrid}>
+              {posts
+                .filter(p => p.user_id === viewingProfile.id)
+                .map(post => (
+                  <div key={post.id} style={styles.gridItem}>
+                    {post.video_url ? (
+                      post.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                        <video src={post.video_url} style={styles.gridMedia} />
+                      ) : (
+                        <img src={post.video_url} alt="Media" style={styles.gridMedia} />
+                      )
+                    ) : (
+                      <div style={styles.textTile}>{post.caption}</div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE MY POST MODAL (EDIT / DELETE / VIEW LIKES & COMMENTS) */}
+      {selectedPost && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>Manage Post</h3>
+              <button onClick={() => setSelectedPost(null)} style={styles.closeBtn}>✕</button>
+            </div>
+
+            {selectedPost.video_url && (
+              selectedPost.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                <video src={selectedPost.video_url} controls style={{ width: '100%', borderRadius: '8px', margin: '10px 0' }} />
+              ) : (
+                <img src={selectedPost.video_url} alt="Post media" style={{ width: '100%', borderRadius: '8px', margin: '10px 0' }} />
+              )
+            )}
+
+            <label style={styles.sectionHeading}>Edit Caption / Content:</label>
+            <textarea 
+              value={editCaption} 
+              onChange={(e) => setEditCaption(e.target.value)} 
+              style={{ ...styles.input, height: '80px', margin: '6px 0 12px 0' }} 
+            />
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button onClick={handleUpdatePost} style={styles.primaryBtn}>Save Caption</button>
+              <button onClick={handleDeletePost} style={styles.dangerBtn}>Delete Post 🗑️</button>
+            </div>
+
+            <h4 style={styles.sectionHeading}>Reactions ({postLikers.length})</h4>
+            <div style={{ display: 'flex', wrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+              {postLikers.length === 0 ? (
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>No likes yet</span>
+              ) : (
+                postLikers.map((username, idx) => (
+                  <span key={idx} style={styles.likerBadge}>❤️ @{username}</span>
+                ))
+              )}
+            </div>
+
+            <h4 style={styles.sectionHeading}>Comments ({selectedPost.comments?.length || 0})</h4>
+            <div style={styles.commentsList}>
+              {(!selectedPost.comments || selectedPost.comments.length === 0) ? (
+                <p style={{ color: '#94a3b8', fontSize: '12px' }}>No comments yet.</p>
+              ) : (
+                selectedPost.comments.map(c => (
+                  <div key={c.id} style={styles.commentItem}>
+                    <span style={{ fontWeight: 'bold', color: '#38bdf8', fontSize: '12px' }}>
+                      @{c.profiles?.username || 'user'}:
+                    </span>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '13px' }}>{c.content}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* COMMENTS MODAL */}
       {activeCommentPostId && (
         <div style={styles.modalOverlay}>
@@ -843,7 +1033,10 @@ export default function Home() {
               ) : (
                 comments.map(c => (
                   <div key={c.id} style={styles.commentItem}>
-                    <p style={{ margin: 0, fontSize: '13px' }}>{c.content}</p>
+                    <span style={{ fontWeight: 'bold', color: '#38bdf8', fontSize: '12px' }}>
+                      @{c.profiles?.username || 'user'}
+                    </span>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '13px' }}>{c.content}</p>
                   </div>
                 ))
               )}
@@ -932,9 +1125,11 @@ const styles = {
     paddingBottom: '70px',
   },
   header: {
-    padding: '16px',
+    padding: '12px 16px',
     borderBottom: '1px solid #1e293b',
-    textAlign: 'center',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: '#0f172a',
     position: 'sticky',
     top: 0,
@@ -946,6 +1141,16 @@ const styles = {
     fontWeight: '800',
     letterSpacing: '2px',
     color: '#38bdf8',
+  },
+  headerInstallBtn: {
+    backgroundColor: '#0284c7',
+    color: '#fff',
+    border: 'none',
+    padding: '6px 12px',
+    borderRadius: '16px',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
   },
   mainContent: {
     padding: '16px',
@@ -974,9 +1179,11 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  feedUsername: {
+  clickableUsername: {
     fontWeight: 'bold',
     color: '#38bdf8',
+    cursor: 'pointer',
+    textDecoration: 'underline',
   },
   articleBadge: {
     backgroundColor: '#0369a1',
@@ -1130,29 +1337,6 @@ const styles = {
     fontSize: '12px',
     margin: '12px 0',
   },
-  installBanner: {
-    backgroundColor: '#0284c7',
-    color: '#fff',
-    padding: '8px 16px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  installBtn: {
-    backgroundColor: '#fff',
-    color: '#0284c7',
-    border: 'none',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-  },
-  dismissBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#fff',
-    cursor: 'pointer',
-  },
   searchHeaderGroup: {
     display: 'flex',
     flexDirection: 'column',
@@ -1224,7 +1408,7 @@ const styles = {
   },
   hashtagCloud: {
     display: 'flex',
-    wrap: 'wrap',
+    flexWrap: 'wrap',
     gap: '6px',
   },
   hashtagPill: {
@@ -1254,13 +1438,23 @@ const styles = {
     flexDirection: 'column',
     gap: '8px',
   },
-  profileResultCard: {
+  clickableProfileResultCard: {
     backgroundColor: '#1e293b',
     padding: '10px',
     borderRadius: '8px',
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
+    cursor: 'pointer',
+  },
+  smallViewBtn: {
+    backgroundColor: '#334155',
+    color: '#38bdf8',
+    border: 'none',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    cursor: 'pointer',
   },
   miniAvatar: {
     width: '36px',
@@ -1298,10 +1492,6 @@ const styles = {
     justifyContent: 'space-between',
     fontSize: '10px',
   },
-  searchAuthor: {
-    fontWeight: 'bold',
-    color: '#38bdf8',
-  },
   typeBadgeVideo: { color: '#ef4444' },
   typeBadgeArticle: { color: '#eab308' },
   typeBadgeMedia: { color: '#22c55e' },
@@ -1318,7 +1508,7 @@ const styles = {
   },
   searchGridTags: {
     display: 'flex',
-    wrap: 'wrap',
+    flexWrap: 'wrap',
     gap: '2px',
   },
   gridTagItem: {
@@ -1437,6 +1627,14 @@ const styles = {
     gap: '4px',
     marginTop: '12px',
   },
+  gridItemClickable: {
+    aspectRatio: '1',
+    backgroundColor: '#1e293b',
+    overflow: 'hidden',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    border: '1px solid #334155',
+  },
   gridItem: {
     aspectRatio: '1',
     backgroundColor: '#1e293b',
@@ -1484,6 +1682,14 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '12px',
+  },
+  likerBadge: {
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    color: '#38bdf8',
   },
   createPostContainer: {
     position: 'fixed',
