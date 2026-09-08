@@ -20,12 +20,14 @@ export default function Home() {
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [website, setWebsite] = useState('');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
 
   // Post & Article Creation State
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [postType, setPostType] = useState('media');
   const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
 
@@ -35,8 +37,8 @@ export default function Home() {
   const [profileSubTab, setProfileSubTab] = useState('posts');
 
   // Likes & Comments Interactive State
-  const [userLikes, setUserLikes] = useState([]); // List of post IDs the logged-in user liked
-  const [activeCommentPostId, setActiveCommentPostId] = useState(null); // Which post's comments are open
+  const [userLikes, setUserLikes] = useState([]);
+  const [activeCommentPostId, setActiveCommentPostId] = useState(null);
   const [comments, setComments] = useState([]);
   const [newCommentText, setNewCommentText] = useState('');
 
@@ -67,7 +69,13 @@ export default function Home() {
     }
   }, [user]);
 
-  // Fetch saved user profile data
+  // Clean up object URLs when preview changes
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
   const fetchUserProfile = async () => {
     if (!user) return;
     const { data, error } = await supabase
@@ -83,7 +91,6 @@ export default function Home() {
     }
   };
 
-  // Fetch all posts and count total likes/comments
   const fetchPosts = async () => {
     const { data, error } = await supabase
       .from('posts')
@@ -95,7 +102,6 @@ export default function Home() {
     }
   };
 
-  // Fetch posts liked by current user
   const fetchUserLikes = async () => {
     if (!user) return;
     const { data } = await supabase
@@ -108,17 +114,12 @@ export default function Home() {
     }
   };
 
-  // ----------------------------------------------------
-  // STEP 2 FUNCTIONS: LIKE & COMMENT HANDLERS
-  // ----------------------------------------------------
-
   const handleLike = async (postId) => {
     if (!user) return alert('Please log in to like posts.');
 
     const isLiked = userLikes.includes(postId);
 
     if (isLiked) {
-      // Remove Like
       await supabase
         .from('likes')
         .delete()
@@ -127,7 +128,6 @@ export default function Home() {
 
       setUserLikes(prev => prev.filter(id => id !== postId));
     } else {
-      // Add Like
       await supabase
         .from('likes')
         .insert([{ user_id: user.id, post_id: postId }]);
@@ -135,7 +135,7 @@ export default function Home() {
       setUserLikes(prev => [...prev, postId]);
     }
 
-    fetchPosts(); // Refresh counters
+    fetchPosts();
   };
 
   const handleOpenComments = async (postId) => {
@@ -162,14 +162,10 @@ export default function Home() {
       alert(error.message);
     } else {
       setNewCommentText('');
-      handleOpenComments(activeCommentPostId); // Refresh comments in popup
-      fetchPosts(); // Refresh comment count on post feed
+      handleOpenComments(activeCommentPostId);
+      fetchPosts();
     }
   };
-
-  // ----------------------------------------------------
-  // AUTH HANDLERS
-  // ----------------------------------------------------
 
   const handleSignUp = async (e) => {
     e.preventDefault();
@@ -180,13 +176,11 @@ export default function Home() {
     if (error) {
       alert(error.message);
     } else if (data?.session) {
-      // Confirmation is disabled; user logged in immediately
       alert('Account created and logged in!');
       setEmail('');
       setPassword('');
     } else {
-      // Email confirmation requirement is enabled
-      alert('Account created! Please check your email inbox (and spam) to confirm your account before signing in.');
+      alert('Account created! Please check your email inbox to confirm your account.');
       setEmail('');
       setPassword('');
     }
@@ -216,7 +210,21 @@ export default function Home() {
       .upsert({ id: user.id, username, bio, website, updated_at: new Date() });
 
     if (error) alert(error.message);
-    else alert('Profile updated successfully!');
+    else {
+      alert('Profile updated successfully!');
+      setIsEditingProfile(false);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+      setPreviewUrl(URL.createObjectURL(selectedFile));
+    } else {
+      setFile(null);
+      setPreviewUrl(null);
+    }
   };
 
   const handleCreatePost = async (e) => {
@@ -257,6 +265,7 @@ export default function Home() {
       alert(`${postType === 'article' ? 'Article' : 'Post'} published!`);
       setCaption('');
       setFile(null);
+      setPreviewUrl(null);
       setShowCreateModal(false);
       fetchPosts();
     } catch (err) {
@@ -269,6 +278,8 @@ export default function Home() {
   const filteredPosts = posts.filter(p => 
     p.caption?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const userPosts = posts.filter(p => p.user_id === user?.id);
 
   return (
     <div style={styles.container}>
@@ -296,12 +307,15 @@ export default function Home() {
                     )}
                     
                     {post.video_url && (
-                      <video src={post.video_url} controls style={styles.videoPlayer} />
+                      post.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                        <video src={post.video_url} controls style={styles.videoPlayer} />
+                      ) : (
+                        <img src={post.video_url} alt="Post media" style={styles.mediaImage} />
+                      )
                     )}
                     
                     <p style={styles.captionText}>{post.caption}</p>
 
-                    {/* Social Interaction Bar */}
                     <div style={styles.interactionRow}>
                       <button 
                         onClick={() => handleLike(post.id)} 
@@ -366,94 +380,147 @@ export default function Home() {
         {/* PROFILE TAB */}
         {activeTab === 'profile' && (
           <section style={styles.roomContainer}>
-            <h2 style={styles.roomTitle}>Profile & Setup</h2>
-
             {!user ? (
-              <form style={styles.authForm}>
-                <input 
-                  type="email" 
-                  placeholder="Email" 
-                  value={email} 
-                  onChange={(e) => setEmail(e.target.value)} 
-                  style={styles.input} 
-                />
-                
-                {/* Password Input with Eye Toggle */}
-                <div style={styles.passwordWrapper}>
+              <div style={styles.authContainer}>
+                <h2 style={styles.roomTitle}>Sign In / Sign Up</h2>
+                <form style={styles.authForm}>
                   <input 
-                    type={showPassword ? 'text' : 'password'} 
-                    placeholder="Password" 
-                    value={password} 
-                    onChange={(e) => setPassword(e.target.value)} 
-                    style={styles.passwordInput} 
+                    type="email" 
+                    placeholder="Email" 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    style={styles.input} 
                   />
-                  <button 
-                    type="button" 
-                    onClick={() => setShowPassword(!showPassword)} 
-                    style={styles.eyeBtn}
-                  >
-                    {showPassword ? '👁️' : '🙈'}
-                  </button>
-                </div>
+                  
+                  <div style={styles.passwordWrapper}>
+                    <input 
+                      type={showPassword ? 'text' : 'password'} 
+                      placeholder="Password" 
+                      value={password} 
+                      onChange={(e) => setPassword(e.target.value)} 
+                      style={styles.passwordInput} 
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setShowPassword(!showPassword)} 
+                      style={styles.eyeBtn}
+                    >
+                      {showPassword ? '👁️' : '🙈'}
+                    </button>
+                  </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="button" onClick={handleSignIn} style={styles.primaryBtn}>Sign In</button>
-                  <button type="button" onClick={handleSignUp} style={styles.secondaryBtn}>Sign Up</button>
-                </div>
-              </form>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button type="button" onClick={handleSignIn} style={styles.primaryBtn}>Sign In</button>
+                    <button type="button" onClick={handleSignUp} style={styles.secondaryBtn}>Sign Up</button>
+                  </div>
+                </form>
+              </div>
             ) : (
               <div>
-                <form onSubmit={handleSaveProfile} style={styles.profileBox}>
-                  <h3>Edit Profile Details</h3>
-                  <input 
-                    type="text" 
-                    placeholder="Username (@username)" 
-                    value={username} 
-                    onChange={(e) => setUsername(e.target.value)} 
-                    style={styles.input} 
-                  />
-                  <textarea 
-                    placeholder="Bio (max 200 characters)" 
-                    maxLength={200}
-                    value={bio} 
-                    onChange={(e) => setBio(e.target.value)} 
-                    style={{ ...styles.input, height: '70px' }} 
-                  />
-                  <small style={{ color: '#94a3b8', alignSelf: 'flex-end' }}>{bio.length}/200</small>
-                  
-                  <input 
-                    type="url" 
-                    placeholder="Website Link (optional)" 
-                    value={website} 
-                    onChange={(e) => setWebsite(e.target.value)} 
-                    style={styles.input} 
-                  />
-                  <button type="submit" style={styles.primaryBtn}>Save Profile</button>
-                </form>
+                {/* PROFESSIONAL DASHBOARD PROFILE CARD */}
+                <div style={styles.proProfileCard}>
+                  <div style={styles.proHeader}>
+                    <div style={styles.avatarCircle}>
+                      {username ? username.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                    <div style={styles.proStatsRow}>
+                      <div style={styles.statBox}>
+                        <span style={styles.statNumber}>{userPosts.length}</span>
+                        <span style={styles.statLabel}>Posts</span>
+                      </div>
+                      <div style={styles.statBox}>
+                        <span style={styles.statNumber}>0</span>
+                        <span style={styles.statLabel}>Followers</span>
+                      </div>
+                      <div style={styles.statBox}>
+                        <span style={styles.statNumber}>0</span>
+                        <span style={styles.statLabel}>Following</span>
+                      </div>
+                    </div>
+                  </div>
 
+                  <div style={styles.proBioSection}>
+                    <h3 style={styles.proUsername}>@{username || 'username'}</h3>
+                    <p style={styles.proBioText}>{bio || 'No bio added yet.'}</p>
+                    {website && (
+                      <a href={website} target="_blank" rel="noreferrer" style={styles.proWebsite}>
+                        🔗 {website}
+                      </a>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                    <button 
+                      onClick={() => setIsEditingProfile(!isEditingProfile)} 
+                      style={styles.editProfileBtn}
+                    >
+                      {isEditingProfile ? 'Cancel Edit' : 'Edit Profile'}
+                    </button>
+                  </div>
+
+                  {/* EDIT FORM SLIDE-OUT */}
+                  {isEditingProfile && (
+                    <form onSubmit={handleSaveProfile} style={styles.profileBox}>
+                      <input 
+                        type="text" 
+                        placeholder="Username (@username)" 
+                        value={username} 
+                        onChange={(e) => setUsername(e.target.value)} 
+                        style={styles.input} 
+                      />
+                      <textarea 
+                        placeholder="Bio (max 200 characters)" 
+                        maxLength={200}
+                        value={bio} 
+                        onChange={(e) => setBio(e.target.value)} 
+                        style={{ ...styles.input, height: '70px' }} 
+                      />
+                      <input 
+                        type="url" 
+                        placeholder="Website Link (optional)" 
+                        value={website} 
+                        onChange={(e) => setWebsite(e.target.value)} 
+                        style={styles.input} 
+                      />
+                      <button type="submit" style={styles.primaryBtn}>Save Changes</button>
+                    </form>
+                  )}
+                </div>
+
+                {/* CONTENT SUB TABS */}
                 <div style={styles.subTabRow}>
                   <button 
                     onClick={() => setProfileSubTab('posts')}
                     style={profileSubTab === 'posts' ? styles.activeSubTab : styles.subTab}
                   >
-                    My Posts
+                    Posts ({userPosts.filter(p => p.post_type !== 'article').length})
                   </button>
                   <button 
                     onClick={() => setProfileSubTab('articles')}
                     style={profileSubTab === 'articles' ? styles.activeSubTab : styles.subTab}
                   >
-                    My Articles
+                    Articles ({userPosts.filter(p => p.post_type === 'article').length})
                   </button>
                 </div>
 
-                {posts
-                  .filter(p => p.user_id === user.id && (profileSubTab === 'articles' ? p.post_type === 'article' : p.post_type !== 'article'))
-                  .map(post => (
-                    <div key={post.id} style={styles.feedCard}>
-                      {post.video_url && <video src={post.video_url} controls style={styles.videoPlayer} />}
-                      <p>{post.caption}</p>
-                    </div>
-                  ))}
+                {/* MODERN 3-COLUMN MEDIA GRID */}
+                <div style={styles.mediaGrid}>
+                  {userPosts
+                    .filter(p => profileSubTab === 'articles' ? p.post_type === 'article' : p.post_type !== 'article')
+                    .map(post => (
+                      <div key={post.id} style={styles.gridItem}>
+                        {post.video_url ? (
+                          post.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                            <video src={post.video_url} style={styles.gridMedia} />
+                          ) : (
+                            <img src={post.video_url} alt="Media" style={styles.gridMedia} />
+                          )
+                        ) : (
+                          <div style={styles.textTile}>{post.caption}</div>
+                        )}
+                      </div>
+                    ))}
+                </div>
               </div>
             )}
 
@@ -519,13 +586,13 @@ export default function Home() {
         </div>
       )}
 
-      {/* CREATE POST MODAL */}
+      {/* CREATE POST MODAL WITH LIVE PREVIEW */}
       {showCreateModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3>Publish Content</h3>
-              <button onClick={() => setShowCreateModal(false)} style={styles.closeBtn}>✕</button>
+              <button onClick={() => { setShowCreateModal(false); setPreviewUrl(null); }} style={styles.closeBtn}>✕</button>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', margin: '10px 0' }}>
@@ -539,7 +606,7 @@ export default function Home() {
                 onClick={() => setPostType('article')} 
                 style={postType === 'article' ? styles.primaryBtn : styles.secondaryBtn}
               >
-                Article (500 Chars)
+                Article
               </button>
             </div>
 
@@ -549,17 +616,25 @@ export default function Home() {
                 maxLength={postType === 'article' ? 500 : 2200}
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
-                style={{ ...styles.input, height: postType === 'article' ? '120px' : '70px' }}
+                style={{ ...styles.input, height: postType === 'article' ? '100px' : '60px' }}
                 required
               />
-              {postType === 'article' && (
-                <small style={{ color: '#94a3b8', textAlign: 'right' }}>{caption.length}/500</small>
+
+              {/* LIVE FILE PREVIEW CONTAINER */}
+              {previewUrl && (
+                <div style={styles.previewContainer}>
+                  {file?.type.startsWith('video/') ? (
+                    <video src={previewUrl} controls style={styles.previewMedia} />
+                  ) : (
+                    <img src={previewUrl} alt="Upload Preview" style={styles.previewMedia} />
+                  )}
+                </div>
               )}
 
               <input 
                 type="file" 
                 accept="video/*,image/*" 
-                onChange={(e) => setFile(e.target.files[0])} 
+                onChange={handleFileChange} 
                 style={styles.fileInput}
               />
 
@@ -591,41 +666,65 @@ const styles = {
   roomTitle: { fontSize: '18px', borderBottom: '1px solid #334155', paddingBottom: '8px' },
   feedCard: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' },
   videoPlayer: { width: '100%', borderRadius: '6px', maxHeight: '350px', backgroundColor: '#000' },
+  mediaImage: { width: '100%', borderRadius: '6px', maxHeight: '350px', objectFit: 'cover' },
   captionText: { fontSize: '14px', lineHeight: '1.4' },
   interactionRow: { display: 'flex', justifyContent: 'space-around', borderTop: '1px solid #334155', paddingTop: '10px', marginTop: '5px' },
   actionBtn: { background: 'none', border: 'none', color: '#94a3b8', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold' },
   input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
   fileInput: { color: '#94a3b8' },
+  authContainer: { display: 'flex', flexDirection: 'column', gap: '15px' },
   authForm: { display: 'flex', flexDirection: 'column', gap: '10px' },
   passwordWrapper: { position: 'relative', display: 'flex', alignItems: 'center', width: '100%' },
   passwordInput: { width: '100%', padding: '10px', paddingRight: '40px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
   eyeBtn: { position: 'absolute', right: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0' },
-  profileBox: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '15px' },
+  
+  // PROFESSIONAL PROFILE STYLING
+  proProfileCard: { backgroundColor: '#1e293b', padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px', border: '1px solid #334155' },
+  proHeader: { display: 'flex', alignItems: 'center', gap: '16px' },
+  avatarCircle: { width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#22c55e', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '24px', fontWeight: 'bold' },
+  proStatsRow: { display: 'flex', flex: 1, justifyContent: 'space-around', textAlign: 'center' },
+  statBox: { display: 'flex', flexDirection: 'column' },
+  statNumber: { fontSize: '16px', fontWeight: 'bold', color: '#f8fafc' },
+  statLabel: { fontSize: '11px', color: '#94a3b8' },
+  proBioSection: { display: 'flex', flexDirection: 'column', gap: '4px' },
+  proUsername: { fontSize: '16px', fontWeight: 'bold', margin: 0 },
+  proBioText: { fontSize: '13px', color: '#cbd5e1', margin: 0, lineHeight: '1.4' },
+  proWebsite: { fontSize: '12px', color: '#38bdf8', textDecoration: 'none' },
+  editProfileBtn: { flex: 1, backgroundColor: '#334155', border: 'none', color: '#fff', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' },
+  profileBox: { backgroundColor: '#0f172a', padding: '12px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' },
+
+  // MEDIA GRID STYLING
+  mediaGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginTop: '10px' },
+  gridItem: { aspectRatio: '1', backgroundColor: '#0f172a', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  gridMedia: { width: '100%', height: '100%', objectFit: 'cover' },
+  textTile: { fontSize: '10px', padding: '6px', color: '#94a3b8', textAlign: 'center', overflow: 'hidden' },
+
+  // PREVIEW MODAL STYLING
+  previewContainer: { width: '100%', maxHeight: '180px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#0f172a', display: 'flex', justifyContent: 'center', alignItems: 'center' },
+  previewMedia: { width: '100%', maxHeight: '180px', objectFit: 'contain' },
+
   primaryBtn: { backgroundColor: '#22c55e', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
   secondaryBtn: { backgroundColor: '#334155', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer' },
   dangerBtn: { backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', width: '100%' },
   emptyText: { color: '#94a3b8', textAlign: 'center', marginTop: '20px' },
   chatBox: { padding: '20px', backgroundColor: '#1e293b', borderRadius: '8px', textAlign: 'center', color: '#94a3b8' },
-  subTabRow: { display: 'flex', gap: '10px', marginBottom: '15px' },
+  subTabRow: { display: 'flex', gap: '10px', marginTop: '15px' },
   subTab: { background: 'none', border: 'none', color: '#64748b', padding: '8px', cursor: 'pointer', flex: 1, borderBottom: '2px solid transparent' },
   activeSubTab: { background: 'none', border: 'none', color: '#22c55e', padding: '8px', cursor: 'pointer', flex: 1, fontWeight: 'bold', borderBottom: '2px solid #22c55e' },
   articleBadge: { alignSelf: 'flex-start', backgroundColor: '#3b82f6', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' },
   
-  // Custom Controls
   bottomLeftMenuWrapper: { position: 'fixed', bottom: '70px', left: '15px', zIndex: 50 },
   threeDotBtn: { backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '50%', width: '36px', height: '36px', fontSize: '18px', cursor: 'pointer' },
   settingsDropdown: { position: 'absolute', bottom: '45px', left: 0, backgroundColor: '#0f172a', border: '1px solid #334155', padding: '8px', borderRadius: '6px', width: '100px' },
   createPostContainer: { display: 'flex', justifyContent: 'center', margin: '20px 0' },
   createPostBtn: { backgroundColor: '#22c55e', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: '25px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)' },
   
-  // Modal & Comments
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   modalCard: { backgroundColor: '#1e293b', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '10px' },
   closeBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' },
   commentsList: { maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', margin: '10px 0' },
   commentItem: { backgroundColor: '#0f172a', padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155' },
 
-  // Nav Dock
   navDock: { position: 'fixed', bottom: 0, left: 0, right: 0, height: '60px', backgroundColor: '#020617', display: 'flex', justifyContent: 'space-around', alignItems: 'center', borderTop: '1px solid #1e293b', zIndex: 40 },
   tab: { background: 'none', border: 'none', color: '#64748b', fontSize: '14px', cursor: 'pointer' },
   activeTab: { background: 'none', border: 'none', color: '#22c55e', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }
