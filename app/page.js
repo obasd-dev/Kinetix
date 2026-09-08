@@ -11,6 +11,10 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('home');
   const [user, setUser] = useState(null);
 
+  // Native PWA App Install State
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
   // Auth State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,6 +47,31 @@ export default function Home() {
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
   const [comments, setComments] = useState([]);
   const [newCommentText, setNewCommentText] = useState('');
+
+  // Handle Mobile PWA Native Installation Event
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setShowInstallBanner(false);
+    }
+    setDeferredPrompt(null);
+  };
 
   useEffect(() => {
     const getSession = async () => {
@@ -310,8 +339,6 @@ export default function Home() {
   };
 
   const cleanedQuery = searchQuery.trim().toLowerCase();
-  const isTagSearch = cleanedQuery.startsWith('#');
-  const targetTag = isTagSearch ? cleanedQuery : `#${cleanedQuery}`;
 
   // Filtered Profiles
   const filteredProfiles = profiles.filter(p => 
@@ -324,7 +351,7 @@ export default function Home() {
     item.tag.includes(cleanedQuery.replace('#', ''))
   );
 
-  // Filtered Posts Logic (Matches Usernames, Captions, Hashtags, or Media Type)
+  // Filtered Posts Logic
   const filteredPosts = posts.filter(post => {
     const captionLower = (post.caption || '').toLowerCase();
     const usernameLower = (post.profiles?.username || '').toLowerCase();
@@ -350,6 +377,17 @@ export default function Home() {
       <header style={styles.header}>
         <h1 style={styles.logo}>KINETIX</h1>
       </header>
+
+      {/* MOBILE NATIVE INSTALL PROMPT BANNER */}
+      {showInstallBanner && (
+        <div style={styles.installBanner}>
+          <div style={{ fontSize: '13px', fontWeight: 'bold' }}>📲 Install KINETIX App for Mobile</div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={handleInstallApp} style={styles.installBtn}>Install</button>
+            <button onClick={() => setShowInstallBanner(false)} style={styles.dismissBtn}>✕</button>
+          </div>
+        </div>
+      )}
 
       <main style={styles.mainContent}>
         {/* HOME TAB */}
@@ -599,7 +637,6 @@ export default function Home() {
               </div>
             ) : (
               <div>
-                {/* PROFESSIONAL CARD HEADER */}
                 <div style={styles.proProfileCard}>
                   <div style={styles.proHeader}>
                     <div style={styles.avatarCircle}>
@@ -668,7 +705,6 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* SUB TABS */}
                 <div style={styles.subTabRow}>
                   <button 
                     onClick={() => setProfileSubTab('posts')}
@@ -684,7 +720,6 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* 3-COLUMN MEDIA GRID */}
                 <div style={styles.mediaGrid}>
                   {userPosts
                     .filter(p => profileSubTab === 'articles' ? p.post_type === 'article' : p.post_type !== 'article')
@@ -801,7 +836,6 @@ export default function Home() {
                 required
               />
 
-              {/* MEDIA PREVIEW SECTION */}
               {previewUrl && (
                 <div style={styles.previewContainer}>
                   {file?.type.startsWith('video/') ? (
@@ -842,6 +876,12 @@ const styles = {
   container: { backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh', paddingBottom: '90px', fontFamily: 'sans-serif', position: 'relative' },
   header: { display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid #1e293b' },
   logo: { fontSize: '22px', fontWeight: 'bold', letterSpacing: '2px', color: '#22c55e' },
+
+  // Install Banner Styles
+  installBanner: { backgroundColor: '#1e293b', borderBottom: '1px solid #22c55e', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' },
+  installBtn: { backgroundColor: '#22c55e', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' },
+  dismissBtn: { backgroundColor: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer', fontSize: '14px' },
+
   mainContent: { padding: '20px', maxWidth: '500px', margin: '0 auto' },
   roomContainer: { display: 'flex', flexDirection: 'column', gap: '15px', position: 'relative' },
   roomTitle: { fontSize: '18px', borderBottom: '1px solid #334155', paddingBottom: '8px', margin: 0 },
@@ -861,7 +901,6 @@ const styles = {
   passwordInput: { width: '100%', padding: '10px', paddingRight: '40px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
   eyeBtn: { position: 'absolute', right: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0' },
   
-  // Search & Discovery Styles
   searchHeaderGroup: { display: 'flex', flexDirection: 'column', gap: '12px' },
   searchInputWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
   searchIcon: { position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b' },
@@ -897,7 +936,6 @@ const styles = {
   gridTagItem: { fontSize: '11px', color: '#22c55e', cursor: 'pointer' },
   searchGridFooter: { display: 'flex', gap: '15px', fontSize: '12px', color: '#94a3b8', borderTop: '1px solid #334155', paddingTop: '8px' },
 
-  // Profile Dashboard Styles
   proProfileCard: { backgroundColor: '#1e293b', padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px', border: '1px solid #334155' },
   proHeader: { display: 'flex', alignItems: 'center', gap: '16px' },
   avatarCircle: { width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#22c55e', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '24px', fontWeight: 'bold' },
@@ -912,13 +950,11 @@ const styles = {
   editProfileBtn: { flex: 1, backgroundColor: '#334155', border: 'none', color: '#fff', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' },
   profileBox: { backgroundColor: '#0f172a', padding: '12px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' },
 
-  // Media Grid Styles
   mediaGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginTop: '10px' },
   gridItem: { aspectRatio: '1', backgroundColor: '#0f172a', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   gridMedia: { width: '100%', height: '100%', objectFit: 'cover' },
   textTile: { fontSize: '10px', padding: '6px', color: '#94a3b8', textAlign: 'center', overflow: 'hidden' },
 
-  // Live File Preview Styles
   previewContainer: { width: '100%', maxHeight: '180px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#0f172a', display: 'flex', justifyContent: 'center', alignItems: 'center' },
   previewMedia: { width: '100%', maxHeight: '180px', objectFit: 'contain' },
 
