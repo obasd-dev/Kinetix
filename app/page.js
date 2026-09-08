@@ -208,6 +208,21 @@ export default function Home() {
     }
   };
 
+  // GOOGLE OAUTH SIGN IN HANDLER
+  const handleGoogleSignIn = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: typeof window !== 'undefined' ? window.location.origin : '',
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   const handleSignUp = async (e) => {
     e.preventDefault();
     if (!email || !password) return alert('Please enter email and password.');
@@ -603,6 +618,36 @@ export default function Home() {
             {!user ? (
               <div style={styles.authContainer}>
                 <h2 style={styles.roomTitle}>Sign In / Sign Up</h2>
+
+                {/* GOOGLE OAUTH BUTTON */}
+                <button 
+                  type="button" 
+                  onClick={handleGoogleSignIn} 
+                  style={styles.googleBtn}
+                >
+                  <svg style={{ width: '18px', height: '18px' }} viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  Continue with Google
+                </button>
+
+                <div style={styles.divider}>or with email</div>
+
                 <form style={styles.authForm}>
                   <input 
                     type="email" 
@@ -872,115 +917,662 @@ export default function Home() {
   );
 }
 
+// STYLES OBJECT
 const styles = {
-  container: { backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh', paddingBottom: '90px', fontFamily: 'sans-serif', position: 'relative' },
-  header: { display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid #1e293b' },
-  logo: { fontSize: '22px', fontWeight: 'bold', letterSpacing: '2px', color: '#22c55e' },
-
-  // Install Banner Styles
-  installBanner: { backgroundColor: '#1e293b', borderBottom: '1px solid #22c55e', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' },
-  installBtn: { backgroundColor: '#22c55e', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' },
-  dismissBtn: { backgroundColor: 'transparent', color: '#94a3b8', border: 'none', cursor: 'pointer', fontSize: '14px' },
-
-  mainContent: { padding: '20px', maxWidth: '500px', margin: '0 auto' },
-  roomContainer: { display: 'flex', flexDirection: 'column', gap: '15px', position: 'relative' },
-  roomTitle: { fontSize: '18px', borderBottom: '1px solid #334155', paddingBottom: '8px', margin: 0 },
-  feedCard: { backgroundColor: '#1e293b', padding: '15px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' },
-  feedCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  feedUsername: { fontSize: '14px', fontWeight: 'bold', color: '#38bdf8' },
-  videoPlayer: { width: '100%', borderRadius: '6px', maxHeight: '350px', backgroundColor: '#000' },
-  mediaImage: { width: '100%', borderRadius: '6px', maxHeight: '350px', objectFit: 'cover' },
-  captionText: { fontSize: '14px', lineHeight: '1.4' },
-  interactionRow: { display: 'flex', justifyContent: 'space-around', borderTop: '1px solid #334155', paddingTop: '10px', marginTop: '5px' },
-  actionBtn: { background: 'none', border: 'none', color: '#94a3b8', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold' },
-  input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
-  fileInput: { color: '#94a3b8' },
-  authContainer: { display: 'flex', flexDirection: 'column', gap: '15px' },
-  authForm: { display: 'flex', flexDirection: 'column', gap: '10px' },
-  passwordWrapper: { position: 'relative', display: 'flex', alignItems: 'center', width: '100%' },
-  passwordInput: { width: '100%', padding: '10px', paddingRight: '40px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#0f172a', color: '#fff', boxSizing: 'border-box' },
-  eyeBtn: { position: 'absolute', right: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0' },
-  
-  searchHeaderGroup: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  searchInputWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
-  searchIcon: { position: 'absolute', left: '12px', fontSize: '14px', color: '#64748b' },
-  searchInput: { width: '100%', padding: '12px 36px 12px 36px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1e293b', color: '#fff', fontSize: '14px', boxSizing: 'border-box' },
-  clearSearchBtn: { position: 'absolute', right: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '14px' },
-  matrixCategoryRow: { display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' },
-  matrixChip: { backgroundColor: '#1e293b', border: '1px solid #334155', color: '#94a3b8', padding: '6px 12px', borderRadius: '16px', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' },
-  activeMatrixChip: { backgroundColor: '#22c55e', border: '1px solid #22c55e', color: '#fff', padding: '6px 12px', borderRadius: '16px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' },
-  
-  sectionHeading: { fontSize: '14px', color: '#94a3b8', margin: '10px 0 6px 0', textTransform: 'uppercase', letterSpacing: '0.5px' },
-  hashtagSection: { display: 'flex', flexDirection: 'column', gap: '6px' },
-  hashtagCloud: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
-  hashtagPill: { backgroundColor: '#1e293b', border: '1px solid #334155', padding: '6px 10px', borderRadius: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' },
-  hashtagBadge: { backgroundColor: '#0f172a', color: '#94a3b8', borderRadius: '10px', padding: '2px 6px', fontSize: '10px', fontWeight: 'bold' },
-
-  searchResultsGroup: { display: 'flex', flexDirection: 'column', gap: '10px' },
-  profileResultsGrid: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  profileResultCard: { display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#1e293b', padding: '10px', borderRadius: '8px', border: '1px solid #334155' },
-  miniAvatar: { width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#22c55e', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold' },
-  profileCardName: { fontSize: '13px', fontWeight: 'bold', color: '#f8fafc' },
-  profileCardBio: { fontSize: '11px', color: '#94a3b8' },
-
-  searchGrid: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  searchGridCard: { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' },
-  searchCardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  searchAuthor: { fontSize: '12px', fontWeight: 'bold', color: '#38bdf8' },
-  typeBadgeVideo: { fontSize: '10px', color: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' },
-  typeBadgeArticle: { fontSize: '10px', color: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' },
-  typeBadgeMedia: { fontSize: '10px', color: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.1)', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' },
-  searchGridMedia: { width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '6px', backgroundColor: '#000' },
-  searchGridCaption: { fontSize: '13px', color: '#cbd5e1', lineHeight: '1.3' },
-  searchGridTags: { display: 'flex', flexWrap: 'wrap', gap: '4px' },
-  gridTagItem: { fontSize: '11px', color: '#22c55e', cursor: 'pointer' },
-  searchGridFooter: { display: 'flex', gap: '15px', fontSize: '12px', color: '#94a3b8', borderTop: '1px solid #334155', paddingTop: '8px' },
-
-  proProfileCard: { backgroundColor: '#1e293b', padding: '16px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px', border: '1px solid #334155' },
-  proHeader: { display: 'flex', alignItems: 'center', gap: '16px' },
-  avatarCircle: { width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#22c55e', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '24px', fontWeight: 'bold' },
-  proStatsRow: { display: 'flex', flex: 1, justifyContent: 'space-around', textAlign: 'center' },
-  statBox: { display: 'flex', flexDirection: 'column' },
-  statNumber: { fontSize: '16px', fontWeight: 'bold', color: '#f8fafc' },
-  statLabel: { fontSize: '11px', color: '#94a3b8' },
-  proBioSection: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  proUsername: { fontSize: '16px', fontWeight: 'bold', margin: 0 },
-  proBioText: { fontSize: '13px', color: '#cbd5e1', margin: 0, lineHeight: '1.4' },
-  proWebsite: { fontSize: '12px', color: '#38bdf8', textDecoration: 'none' },
-  editProfileBtn: { flex: 1, backgroundColor: '#334155', border: 'none', color: '#fff', padding: '8px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' },
-  profileBox: { backgroundColor: '#0f172a', padding: '12px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' },
-
-  mediaGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginTop: '10px' },
-  gridItem: { aspectRatio: '1', backgroundColor: '#0f172a', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  gridMedia: { width: '100%', height: '100%', objectFit: 'cover' },
-  textTile: { fontSize: '10px', padding: '6px', color: '#94a3b8', textAlign: 'center', overflow: 'hidden' },
-
-  previewContainer: { width: '100%', maxHeight: '180px', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#0f172a', display: 'flex', justifyContent: 'center', alignItems: 'center' },
-  previewMedia: { width: '100%', maxHeight: '180px', objectFit: 'contain' },
-
-  primaryBtn: { backgroundColor: '#22c55e', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
-  secondaryBtn: { backgroundColor: '#334155', border: 'none', color: '#fff', padding: '10px', borderRadius: '6px', cursor: 'pointer' },
-  dangerBtn: { backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', width: '100%' },
-  emptyText: { color: '#94a3b8', textAlign: 'center', marginTop: '10px', fontSize: '13px' },
-  chatBox: { padding: '20px', backgroundColor: '#1e293b', borderRadius: '8px', textAlign: 'center', color: '#94a3b8' },
-  subTabRow: { display: 'flex', gap: '10px', marginTop: '15px' },
-  subTab: { background: 'none', border: 'none', color: '#64748b', padding: '8px', cursor: 'pointer', flex: 1, borderBottom: '2px solid transparent' },
-  activeSubTab: { background: 'none', border: 'none', color: '#22c55e', padding: '8px', cursor: 'pointer', flex: 1, fontWeight: 'bold', borderBottom: '2px solid #22c55e' },
-  articleBadge: { backgroundColor: '#3b82f6', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' },
-  
-  bottomLeftMenuWrapper: { position: 'fixed', bottom: '70px', left: '15px', zIndex: 50 },
-  threeDotBtn: { backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '50%', width: '36px', height: '36px', fontSize: '18px', cursor: 'pointer' },
-  settingsDropdown: { position: 'absolute', bottom: '45px', left: 0, backgroundColor: '#0f172a', border: '1px solid #334155', padding: '8px', borderRadius: '6px', width: '100px' },
-  createPostContainer: { display: 'flex', justifyContent: 'center', margin: '20px 0' },
-  createPostBtn: { backgroundColor: '#22c55e', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: '25px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)' },
-  
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
-  modalCard: { backgroundColor: '#1e293b', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '10px' },
-  closeBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' },
-  commentsList: { maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', margin: '10px 0' },
-  commentItem: { backgroundColor: '#0f172a', padding: '8px 12px', borderRadius: '6px', border: '1px solid #334155' },
-
-  navDock: { position: 'fixed', bottom: 0, left: 0, right: 0, height: '60px', backgroundColor: '#020617', display: 'flex', justifyContent: 'space-around', alignItems: 'center', borderTop: '1px solid #1e293b', zIndex: 40 },
-  tab: { background: 'none', border: 'none', color: '#64748b', fontSize: '14px', cursor: 'pointer' },
-  activeTab: { background: 'none', border: 'none', color: '#22c55e', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }
+  container: {
+    backgroundColor: '#0f172a',
+    color: '#f8fafc',
+    minHeight: '100vh',
+    paddingBottom: '80px',
+    fontFamily: 'sans-serif',
+  },
+  header: {
+    padding: '16px',
+    borderBottom: '1px solid #1e293b',
+    textAlign: 'center',
+    backgroundColor: '#0f172a',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
+  },
+  logo: {
+    margin: 0,
+    fontSize: '20px',
+    letterSpacing: '2px',
+    color: '#38bdf8',
+  },
+  installBanner: {
+    backgroundColor: '#1e293b',
+    borderBottom: '1px solid #334155',
+    padding: '10px 16px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  installBtn: {
+    backgroundColor: '#38bdf8',
+    color: '#0f172a',
+    border: 'none',
+    padding: '6px 12px',
+    borderRadius: '4px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  dismissBtn: {
+    backgroundColor: 'transparent',
+    color: '#94a3b8',
+    border: 'none',
+    cursor: 'pointer',
+  },
+  mainContent: {
+    maxWidth: '600px',
+    margin: '0 auto',
+    padding: '16px',
+  },
+  roomContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  roomTitle: {
+    fontSize: '18px',
+    margin: '0 0 8px 0',
+  },
+  emptyText: {
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: '32px',
+  },
+  feedCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: '8px',
+    padding: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  feedCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  feedUsername: {
+    fontWeight: 'bold',
+    color: '#38bdf8',
+  },
+  articleBadge: {
+    backgroundColor: '#0284c7',
+    color: '#ffffff',
+    fontSize: '10px',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    textTransform: 'uppercase',
+  },
+  videoPlayer: {
+    width: '100%',
+    borderRadius: '6px',
+    maxHeight: '400px',
+    backgroundColor: '#000000',
+  },
+  mediaImage: {
+    width: '100%',
+    borderRadius: '6px',
+    maxHeight: '400px',
+    objectFit: 'cover',
+  },
+  captionText: {
+    margin: 0,
+    lineHeight: '1.4',
+  },
+  interactionRow: {
+    display: 'flex',
+    gap: '16px',
+    borderTop: '1px solid #334155',
+    paddingTop: '12px',
+  },
+  actionBtn: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    fontSize: '14px',
+  },
+  searchHeaderGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  searchInputWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '12px',
+  },
+  searchInput: {
+    width: '100%',
+    padding: '10px 36px',
+    backgroundColor: '#1e293b',
+    border: '1px solid #334155',
+    borderRadius: '6px',
+    color: '#ffffff',
+    fontSize: '14px',
+  },
+  clearSearchBtn: {
+    position: 'absolute',
+    right: '12px',
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+  },
+  matrixCategoryRow: {
+    display: 'flex',
+    gap: '8px',
+    overflowX: 'auto',
+    paddingBottom: '4px',
+  },
+  matrixChip: {
+    backgroundColor: '#1e293b',
+    color: '#94a3b8',
+    border: '1px solid #334155',
+    padding: '6px 12px',
+    borderRadius: '16px',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  activeMatrixChip: {
+    backgroundColor: '#38bdf8',
+    color: '#0f172a',
+    border: '1px solid #38bdf8',
+    padding: '6px 12px',
+    borderRadius: '16px',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  hashtagSection: {
+    marginTop: '8px',
+  },
+  sectionHeading: {
+    margin: '0 0 8px 0',
+    color: '#94a3b8',
+    fontSize: '13px',
+    textTransform: 'uppercase',
+  },
+  hashtagCloud: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+  hashtagPill: {
+    backgroundColor: '#1e293b',
+    border: '1px solid #334155',
+    borderRadius: '20px',
+    padding: '4px 10px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    cursor: 'pointer',
+  },
+  hashtagBadge: {
+    backgroundColor: '#334155',
+    color: '#f8fafc',
+    borderRadius: '10px',
+    padding: '2px 6px',
+    fontSize: '10px',
+  },
+  searchResultsGroup: {
+    marginTop: '12px',
+  },
+  profileResultsGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  profileResultCard: {
+    backgroundColor: '#1e293b',
+    padding: '10px',
+    borderRadius: '6px',
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+  },
+  miniAvatar: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    backgroundColor: '#38bdf8',
+    color: '#0f172a',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 'bold',
+  },
+  profileCardName: {
+    fontWeight: 'bold',
+    fontSize: '14px',
+  },
+  profileCardBio: {
+    fontSize: '12px',
+    color: '#94a3b8',
+  },
+  searchGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+    gap: '12px',
+  },
+  searchGridCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: '6px',
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  searchCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  searchAuthor: {
+    fontSize: '12px',
+    fontWeight: 'bold',
+    color: '#38bdf8',
+  },
+  typeBadgeVideo: {
+    fontSize: '9px',
+    backgroundColor: '#8b5cf6',
+    padding: '2px 4px',
+    borderRadius: '4px',
+  },
+  typeBadgeArticle: {
+    fontSize: '9px',
+    backgroundColor: '#0284c7',
+    padding: '2px 4px',
+    borderRadius: '4px',
+  },
+  typeBadgeMedia: {
+    fontSize: '9px',
+    backgroundColor: '#10b981',
+    padding: '2px 4px',
+    borderRadius: '4px',
+  },
+  searchGridMedia: {
+    width: '100%',
+    height: '140px',
+    objectFit: 'cover',
+    borderRadius: '4px',
+    backgroundColor: '#000000',
+  },
+  searchGridCaption: {
+    fontSize: '13px',
+    margin: 0,
+  },
+  searchGridTags: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '4px',
+  },
+  gridTagItem: {
+    fontSize: '11px',
+    color: '#22c55e',
+    cursor: 'pointer',
+  },
+  searchGridFooter: {
+    display: 'flex',
+    gap: '12px',
+    fontSize: '12px',
+    color: '#94a3b8',
+  },
+  chatBox: {
+    backgroundColor: '#1e293b',
+    padding: '20px',
+    borderRadius: '8px',
+    textAlign: 'center',
+    color: '#94a3b8',
+  },
+  authContainer: {
+    backgroundColor: '#1e293b',
+    padding: '20px',
+    borderRadius: '8px',
+  },
+  googleBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    border: 'none',
+    padding: '12px',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    width: '100%',
+  },
+  divider: {
+    textAlign: 'center',
+    color: '#64748b',
+    fontSize: '12px',
+    margin: '12px 0',
+  },
+  authForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  input: {
+    width: '100%',
+    padding: '10px',
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    borderRadius: '6px',
+    color: '#ffffff',
+    boxSizing: 'border-box',
+  },
+  passwordWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    width: '100%',
+    padding: '10px',
+    paddingRight: '40px',
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    borderRadius: '6px',
+    color: '#ffffff',
+    boxSizing: 'border-box',
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: '10px',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+  },
+  primaryBtn: {
+    flex: 1,
+    backgroundColor: '#38bdf8',
+    color: '#0f172a',
+    border: 'none',
+    padding: '10px',
+    borderRadius: '6px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  secondaryBtn: {
+    flex: 1,
+    backgroundColor: '#334155',
+    color: '#ffffff',
+    border: 'none',
+    padding: '10px',
+    borderRadius: '6px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  proProfileCard: {
+    backgroundColor: '#1e293b',
+    padding: '16px',
+    borderRadius: '8px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  proHeader: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'center',
+  },
+  avatarCircle: {
+    width: '60px',
+    height: '60px',
+    borderRadius: '50%',
+    backgroundColor: '#38bdf8',
+    color: '#0f172a',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '24px',
+    fontWeight: 'bold',
+  },
+  proStatsRow: {
+    display: 'flex',
+    flex: 1,
+    justifyContent: 'space-around',
+  },
+  statBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontWeight: 'bold',
+    fontSize: '16px',
+  },
+  statLabel: {
+    fontSize: '11px',
+    color: '#94a3b8',
+  },
+  proBioSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  proUsername: {
+    margin: 0,
+    fontSize: '16px',
+  },
+  proBioText: {
+    margin: 0,
+    fontSize: '13px',
+    color: '#cbd5e1',
+  },
+  proWebsite: {
+    fontSize: '12px',
+    color: '#38bdf8',
+    textDecoration: 'none',
+  },
+  editProfileBtn: {
+    width: '100%',
+    backgroundColor: '#334155',
+    color: '#ffffff',
+    border: 'none',
+    padding: '8px',
+    borderRadius: '6px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  profileBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    marginTop: '10px',
+  },
+  subTabRow: {
+    display: 'flex',
+    gap: '10px',
+    marginTop: '16px',
+  },
+  subTab: {
+    flex: 1,
+    backgroundColor: '#1e293b',
+    color: '#94a3b8',
+    border: 'none',
+    padding: '10px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  },
+  activeSubTab: {
+    flex: 1,
+    backgroundColor: '#334155',
+    color: '#ffffff',
+    border: 'none',
+    padding: '10px',
+    borderRadius: '6px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  mediaGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '8px',
+    marginTop: '12px',
+  },
+  gridItem: {
+    aspectRatio: '1',
+    backgroundColor: '#1e293b',
+    borderRadius: '6px',
+    overflow: 'hidden',
+  },
+  gridMedia: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  textTile: {
+    padding: '8px',
+    fontSize: '10px',
+    overflow: 'hidden',
+    height: '100%',
+  },
+  bottomLeftMenuWrapper: {
+    position: 'fixed',
+    bottom: '80px',
+    left: '16px',
+    zIndex: 20,
+  },
+  threeDotBtn: {
+    backgroundColor: '#1e293b',
+    color: '#ffffff',
+    border: '1px solid #334155',
+    borderRadius: '50%',
+    width: '40px',
+    height: '40px',
+    fontSize: '18px',
+    cursor: 'pointer',
+  },
+  settingsDropdown: {
+    position: 'absolute',
+    bottom: '50px',
+    left: '0',
+    backgroundColor: '#1e293b',
+    border: '1px solid #334155',
+    borderRadius: '6px',
+    padding: '8px',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+  },
+  dangerBtn: {
+    backgroundColor: '#ef4444',
+    color: '#ffffff',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  createPostContainer: {
+    position: 'fixed',
+    bottom: '80px',
+    right: '16px',
+    zIndex: 20,
+  },
+  createPostBtn: {
+    backgroundColor: '#38bdf8',
+    color: '#0f172a',
+    border: 'none',
+    padding: '12px 20px',
+    borderRadius: '30px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+    padding: '16px',
+  },
+  modalCard: {
+    backgroundColor: '#1e293b',
+    width: '100%',
+    maxWidth: '500px',
+    borderRadius: '8px',
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  closeBtn: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#94a3b8',
+    fontSize: '18px',
+    cursor: 'pointer',
+  },
+  commentsList: {
+    maxHeight: '200px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  commentItem: {
+    backgroundColor: '#0f172a',
+    padding: '8px',
+    borderRadius: '4px',
+  },
+  previewContainer: {
+    width: '100%',
+    maxHeight: '200px',
+    overflow: 'hidden',
+    borderRadius: '6px',
+  },
+  previewMedia: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  fileInput: {
+    color: '#94a3b8',
+  },
+  navDock: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#0f172a',
+    borderTop: '1px solid #1e293b',
+    display: 'flex',
+    justifyContent: 'space-around',
+    padding: '12px 0',
+    zIndex: 10,
+  },
+  tab: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#94a3b8',
+    fontSize: '14px',
+    cursor: 'pointer',
+  },
+  activeTab: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#38bdf8',
+    fontSize: '14px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
 };
