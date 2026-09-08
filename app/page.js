@@ -39,7 +39,7 @@ export default function Home() {
   const [posts, setPosts] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchCategory, setSearchCategory] = useState('all'); // 'all' | 'profiles' | 'hashtags' | 'videos' | 'articles'
+  const [searchCategory, setSearchCategory] = useState('all');
   const [profileSubTab, setProfileSubTab] = useState('posts');
 
   // Likes & Comments Interactive State
@@ -208,7 +208,6 @@ export default function Home() {
     }
   };
 
-  // GOOGLE OAUTH SIGN IN HANDLER
   const handleGoogleSignIn = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -332,14 +331,12 @@ export default function Home() {
     }
   };
 
-  // Extract Hashtags Helper
   const extractHashtags = (text) => {
     if (!text) return [];
     const matches = text.match(/#[a-zA-Z0-9_]+/g);
     return matches ? matches.map(tag => tag.toLowerCase()) : [];
   };
 
-  // Gather system-wide hashtag analytics
   const getAllHashtags = () => {
     const tagCounts = {};
     posts.forEach(post => {
@@ -355,18 +352,15 @@ export default function Home() {
 
   const cleanedQuery = searchQuery.trim().toLowerCase();
 
-  // Filtered Profiles
   const filteredProfiles = profiles.filter(p => 
     p.username?.toLowerCase().includes(cleanedQuery.replace('@', '')) ||
     p.bio?.toLowerCase().includes(cleanedQuery)
   );
 
-  // Filtered Hashtags
   const matchingHashtags = getAllHashtags().filter(item => 
     item.tag.includes(cleanedQuery.replace('#', ''))
   );
 
-  // Filtered Posts Logic
   const filteredPosts = posts.filter(post => {
     const captionLower = (post.caption || '').toLowerCase();
     const usernameLower = (post.profiles?.username || '').toLowerCase();
@@ -393,7 +387,6 @@ export default function Home() {
         <h1 style={styles.logo}>KINETIX</h1>
       </header>
 
-      {/* MOBILE NATIVE INSTALL PROMPT BANNER */}
       {showInstallBanner && (
         <div style={styles.installBanner}>
           <div style={{ fontSize: '13px', fontWeight: 'bold' }}>📲 Install KINETIX App for Mobile</div>
@@ -460,7 +453,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* DISCOVERY & SEARCH MATRIX TAB */}
+        {/* SEARCH TAB */}
         {activeTab === 'search' && (
           <section style={styles.roomContainer}>
             <div style={styles.searchHeaderGroup}>
@@ -479,7 +472,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* SEARCH CATEGORY FILTER MATRIX */}
               <div style={styles.matrixCategoryRow}>
                 {['all', 'profiles', 'hashtags', 'videos', 'articles'].map((cat) => (
                   <button
@@ -493,7 +485,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* HASHTAG CLOUD / TRENDING MATRIX */}
             {(searchCategory === 'all' || searchCategory === 'hashtags') && matchingHashtags.length > 0 && (
               <div style={styles.hashtagSection}>
                 <h4 style={styles.sectionHeading}>Matched Hashtags</h4>
@@ -515,7 +506,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* MATCHED PROFILES SECTION */}
             {(searchCategory === 'all' || searchCategory === 'profiles') && filteredProfiles.length > 0 && searchQuery && (
               <div style={styles.searchResultsGroup}>
                 <h4 style={styles.sectionHeading}>Profiles</h4>
@@ -535,7 +525,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* CONTENT SEARCH RESULTS GRID */}
             {(searchCategory !== 'profiles' && searchCategory !== 'hashtags') && (
               <div style={styles.searchResultsGroup}>
                 <h4 style={styles.sectionHeading}>Content Stream ({filteredPosts.length})</h4>
@@ -619,7 +608,6 @@ export default function Home() {
               <div style={styles.authContainer}>
                 <h2 style={styles.roomTitle}>Sign In / Sign Up</h2>
 
-                {/* GOOGLE OAUTH BUTTON */}
                 <button 
                   type="button" 
                   onClick={handleGoogleSignIn} 
@@ -812,6 +800,34 @@ export default function Home() {
         )}
       </main>
 
+      {/* FOOTER NAVIGATION BAR */}
+      <nav style={styles.navBar}>
+        <button 
+          onClick={() => setActiveTab('home')} 
+          style={activeTab === 'home' ? styles.activeNavBtn : styles.navBtn}
+        >
+          🏠 <span>Home</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('search')} 
+          style={activeTab === 'search' ? styles.activeNavBtn : styles.navBtn}
+        >
+          🔍 <span>Search</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('dms')} 
+          style={activeTab === 'dms' ? styles.activeNavBtn : styles.navBtn}
+        >
+          💬 <span>DMs</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('profile')} 
+          style={activeTab === 'profile' ? styles.activeNavBtn : styles.navBtn}
+        >
+          👤 <span>Profile</span>
+        </button>
+      </nav>
+
       {/* COMMENTS MODAL */}
       {activeCommentPostId && (
         <div style={styles.modalOverlay}>
@@ -847,7 +863,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* CREATE POST MODAL WITH LIVE PREVIEW */}
+      {/* CREATE POST MODAL */}
       {showCreateModal && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
@@ -872,30 +888,28 @@ export default function Home() {
             </div>
 
             <form onSubmit={handleCreatePost} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <textarea 
-                placeholder={postType === 'article' ? "Write your article content (max 500 characters)..." : "Write a caption with #hashtags..."}
-                maxLength={postType === 'article' ? 500 : 2200}
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                style={{ ...styles.input, height: postType === 'article' ? '100px' : '60px' }}
-                required
+              <input 
+                type="file" 
+                accept="image/*,video/*" 
+                onChange={handleFileChange} 
+                style={styles.input}
               />
 
               {previewUrl && (
-                <div style={styles.previewContainer}>
+                <div style={{ margin: '5px 0' }}>
                   {file?.type.startsWith('video/') ? (
-                    <video src={previewUrl} controls style={styles.previewMedia} />
+                    <video src={previewUrl} controls style={{ width: '100%', borderRadius: '8px' }} />
                   ) : (
-                    <img src={previewUrl} alt="Upload Preview" style={styles.previewMedia} />
+                    <img src={previewUrl} alt="Preview" style={{ width: '100%', borderRadius: '8px' }} />
                   )}
                 </div>
               )}
 
-              <input 
-                type="file" 
-                accept="video/*,image/*" 
-                onChange={handleFileChange} 
-                style={styles.fileInput}
+              <textarea 
+                placeholder="Write a caption or article content..." 
+                value={caption} 
+                onChange={(e) => setCaption(e.target.value)} 
+                style={{ ...styles.input, height: '90px' }} 
               />
 
               <button type="submit" disabled={uploading} style={styles.primaryBtn}>
@@ -905,26 +919,17 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      {/* NAV DOCK */}
-      <nav style={styles.navDock}>
-        <button onClick={() => setActiveTab('home')} style={activeTab === 'home' ? styles.activeTab : styles.tab}>Home</button>
-        <button onClick={() => setActiveTab('search')} style={activeTab === 'search' ? styles.activeTab : styles.tab}>Discovery</button>
-        <button onClick={() => setActiveTab('dms')} style={activeTab === 'dms' ? styles.activeTab : styles.tab}>Chats</button>
-        <button onClick={() => setActiveTab('profile')} style={activeTab === 'profile' ? styles.activeTab : styles.tab}>Profile</button>
-      </nav>
     </div>
   );
 }
 
-// STYLES OBJECT
 const styles = {
   container: {
     backgroundColor: '#0f172a',
     color: '#f8fafc',
     minHeight: '100vh',
-    paddingBottom: '80px',
     fontFamily: 'sans-serif',
+    paddingBottom: '70px',
   },
   header: {
     padding: '16px',
@@ -938,36 +943,14 @@ const styles = {
   logo: {
     margin: 0,
     fontSize: '20px',
+    fontWeight: '800',
     letterSpacing: '2px',
     color: '#38bdf8',
   },
-  installBanner: {
-    backgroundColor: '#1e293b',
-    borderBottom: '1px solid #334155',
-    padding: '10px 16px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  installBtn: {
-    backgroundColor: '#38bdf8',
-    color: '#0f172a',
-    border: 'none',
-    padding: '6px 12px',
-    borderRadius: '4px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-  },
-  dismissBtn: {
-    backgroundColor: 'transparent',
-    color: '#94a3b8',
-    border: 'none',
-    cursor: 'pointer',
-  },
   mainContent: {
+    padding: '16px',
     maxWidth: '600px',
     margin: '0 auto',
-    padding: '16px',
   },
   roomContainer: {
     display: 'flex',
@@ -978,14 +961,9 @@ const styles = {
     fontSize: '18px',
     margin: '0 0 8px 0',
   },
-  emptyText: {
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: '32px',
-  },
   feedCard: {
     backgroundColor: '#1e293b',
-    borderRadius: '8px',
+    borderRadius: '12px',
     padding: '16px',
     display: 'flex',
     flexDirection: 'column',
@@ -1001,46 +979,184 @@ const styles = {
     color: '#38bdf8',
   },
   articleBadge: {
-    backgroundColor: '#0284c7',
-    color: '#ffffff',
+    backgroundColor: '#0369a1',
+    color: '#fff',
     fontSize: '10px',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    textTransform: 'uppercase',
+    padding: '2px 8px',
+    borderRadius: '12px',
   },
   videoPlayer: {
     width: '100%',
-    borderRadius: '6px',
-    maxHeight: '400px',
-    backgroundColor: '#000000',
+    borderRadius: '8px',
   },
   mediaImage: {
     width: '100%',
-    borderRadius: '6px',
-    maxHeight: '400px',
-    objectFit: 'cover',
+    borderRadius: '8px',
   },
   captionText: {
     margin: 0,
+    fontSize: '14px',
     lineHeight: '1.4',
   },
   interactionRow: {
     display: 'flex',
-    gap: '16px',
-    borderTop: '1px solid #334155',
-    paddingTop: '12px',
+    gap: '12px',
   },
   actionBtn: {
-    backgroundColor: 'transparent',
+    background: 'none',
     border: 'none',
     color: '#94a3b8',
     cursor: 'pointer',
     fontSize: '14px',
+    padding: 0,
+  },
+  navBar: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#0f172a',
+    borderTop: '1px solid #1e293b',
+    display: 'flex',
+    justifyContent: 'space-around',
+    padding: '10px 0',
+    zIndex: 10,
+  },
+  navBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#64748b',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
+  activeNavBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#38bdf8',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
+  emptyText: {
+    color: '#64748b',
+    fontSize: '14px',
+  },
+  authContainer: {
+    backgroundColor: '#1e293b',
+    padding: '20px',
+    borderRadius: '12px',
+  },
+  authForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  input: {
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    color: '#fff',
+    padding: '10px',
+    borderRadius: '6px',
+    fontSize: '14px',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  passwordWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    color: '#fff',
+    padding: '10px',
+    paddingRight: '40px',
+    borderRadius: '6px',
+    fontSize: '14px',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: '10px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+  },
+  primaryBtn: {
+    backgroundColor: '#0284c7',
+    color: '#fff',
+    border: 'none',
+    padding: '10px 16px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  secondaryBtn: {
+    backgroundColor: '#334155',
+    color: '#fff',
+    border: 'none',
+    padding: '10px 16px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    flex: 1,
+  },
+  googleBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+    backgroundColor: '#ffffff',
+    color: '#000',
+    border: 'none',
+    padding: '10px',
+    borderRadius: '6px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    width: '100%',
+  },
+  divider: {
+    textAlign: 'center',
+    color: '#64748b',
+    fontSize: '12px',
+    margin: '12px 0',
+  },
+  installBanner: {
+    backgroundColor: '#0284c7',
+    color: '#fff',
+    padding: '8px 16px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  installBtn: {
+    backgroundColor: '#fff',
+    color: '#0284c7',
+    border: 'none',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  dismissBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#fff',
+    cursor: 'pointer',
   },
   searchHeaderGroup: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
+    gap: '10px',
   },
   searchInputWrapper: {
     position: 'relative',
@@ -1049,21 +1165,22 @@ const styles = {
   },
   searchIcon: {
     position: 'absolute',
-    left: '12px',
+    left: '10px',
   },
   searchInput: {
-    width: '100%',
-    padding: '10px 36px',
     backgroundColor: '#1e293b',
     border: '1px solid #334155',
-    borderRadius: '6px',
-    color: '#ffffff',
+    color: '#fff',
+    padding: '10px 35px',
+    borderRadius: '20px',
     fontSize: '14px',
+    width: '100%',
+    boxSizing: 'border-box',
   },
   clearSearchBtn: {
     position: 'absolute',
-    right: '12px',
-    backgroundColor: 'transparent',
+    right: '10px',
+    background: 'none',
     border: 'none',
     color: '#94a3b8',
     cursor: 'pointer',
@@ -1077,56 +1194,60 @@ const styles = {
   matrixChip: {
     backgroundColor: '#1e293b',
     color: '#94a3b8',
-    border: '1px solid #334155',
+    border: 'none',
     padding: '6px 12px',
     borderRadius: '16px',
     fontSize: '11px',
-    fontWeight: 'bold',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
   activeMatrixChip: {
-    backgroundColor: '#38bdf8',
-    color: '#0f172a',
-    border: '1px solid #38bdf8',
+    backgroundColor: '#0284c7',
+    color: '#fff',
+    border: 'none',
     padding: '6px 12px',
     borderRadius: '16px',
     fontSize: '11px',
-    fontWeight: 'bold',
     cursor: 'pointer',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap',
   },
   hashtagSection: {
-    marginTop: '8px',
+    backgroundColor: '#1e293b',
+    padding: '12px',
+    borderRadius: '8px',
   },
   sectionHeading: {
     margin: '0 0 8px 0',
+    fontSize: '12px',
     color: '#94a3b8',
-    fontSize: '13px',
-    textTransform: 'uppercase',
   },
   hashtagCloud: {
     display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
+    wrap: 'wrap',
+    gap: '6px',
   },
   hashtagPill: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#0f172a',
     border: '1px solid #334155',
-    borderRadius: '20px',
-    padding: '4px 10px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
+    padding: '4px 8px',
+    borderRadius: '12px',
+    fontSize: '12px',
     cursor: 'pointer',
+    display: 'flex',
+    gap: '6px',
   },
   hashtagBadge: {
     backgroundColor: '#334155',
-    color: '#f8fafc',
-    borderRadius: '10px',
-    padding: '2px 6px',
+    color: '#fff',
+    padding: '0 4px',
+    borderRadius: '8px',
     fontSize: '10px',
   },
   searchResultsGroup: {
-    marginTop: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
   },
   profileResultsGrid: {
     display: 'flex',
@@ -1136,17 +1257,16 @@ const styles = {
   profileResultCard: {
     backgroundColor: '#1e293b',
     padding: '10px',
-    borderRadius: '6px',
+    borderRadius: '8px',
     display: 'flex',
-    gap: '12px',
     alignItems: 'center',
+    gap: '12px',
   },
   miniAvatar: {
     width: '36px',
     height: '36px',
     borderRadius: '50%',
-    backgroundColor: '#38bdf8',
-    color: '#0f172a',
+    backgroundColor: '#0284c7',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1157,185 +1277,82 @@ const styles = {
     fontSize: '14px',
   },
   profileCardBio: {
-    fontSize: '12px',
     color: '#94a3b8',
+    fontSize: '12px',
   },
   searchGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-    gap: '12px',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '10px',
   },
   searchGridCard: {
     backgroundColor: '#1e293b',
-    borderRadius: '6px',
-    padding: '12px',
+    padding: '8px',
+    borderRadius: '8px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '6px',
   },
   searchCardHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    fontSize: '10px',
   },
   searchAuthor: {
-    fontSize: '12px',
     fontWeight: 'bold',
     color: '#38bdf8',
   },
-  typeBadgeVideo: {
-    fontSize: '9px',
-    backgroundColor: '#8b5cf6',
-    padding: '2px 4px',
-    borderRadius: '4px',
-  },
-  typeBadgeArticle: {
-    fontSize: '9px',
-    backgroundColor: '#0284c7',
-    padding: '2px 4px',
-    borderRadius: '4px',
-  },
-  typeBadgeMedia: {
-    fontSize: '9px',
-    backgroundColor: '#10b981',
-    padding: '2px 4px',
-    borderRadius: '4px',
-  },
+  typeBadgeVideo: { color: '#ef4444' },
+  typeBadgeArticle: { color: '#eab308' },
+  typeBadgeMedia: { color: '#22c55e' },
   searchGridMedia: {
     width: '100%',
-    height: '140px',
+    height: '100px',
     objectFit: 'cover',
     borderRadius: '4px',
-    backgroundColor: '#000000',
   },
   searchGridCaption: {
-    fontSize: '13px',
+    fontSize: '11px',
     margin: 0,
+    lineHeight: '1.2',
   },
   searchGridTags: {
     display: 'flex',
-    flexWrap: 'wrap',
-    gap: '4px',
+    wrap: 'wrap',
+    gap: '2px',
   },
   gridTagItem: {
-    fontSize: '11px',
+    fontSize: '9px',
     color: '#22c55e',
     cursor: 'pointer',
   },
   searchGridFooter: {
     display: 'flex',
-    gap: '12px',
-    fontSize: '12px',
+    justifyContent: 'space-between',
+    fontSize: '10px',
     color: '#94a3b8',
   },
   chatBox: {
     backgroundColor: '#1e293b',
     padding: '20px',
     borderRadius: '8px',
-    textAlign: 'center',
     color: '#94a3b8',
-  },
-  authContainer: {
-    backgroundColor: '#1e293b',
-    padding: '20px',
-    borderRadius: '8px',
-  },
-  googleBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '10px',
-    backgroundColor: '#ffffff',
-    color: '#000000',
-    border: 'none',
-    padding: '12px',
-    borderRadius: '6px',
-    fontSize: '14px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    width: '100%',
-  },
-  divider: {
-    textAlign: 'center',
-    color: '#64748b',
-    fontSize: '12px',
-    margin: '12px 0',
-  },
-  authForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  input: {
-    width: '100%',
-    padding: '10px',
-    backgroundColor: '#0f172a',
-    border: '1px solid #334155',
-    borderRadius: '6px',
-    color: '#ffffff',
-    boxSizing: 'border-box',
-  },
-  passwordWrapper: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-  },
-  passwordInput: {
-    width: '100%',
-    padding: '10px',
-    paddingRight: '40px',
-    backgroundColor: '#0f172a',
-    border: '1px solid #334155',
-    borderRadius: '6px',
-    color: '#ffffff',
-    boxSizing: 'border-box',
-  },
-  eyeBtn: {
-    position: 'absolute',
-    right: '10px',
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-  },
-  primaryBtn: {
-    flex: 1,
-    backgroundColor: '#38bdf8',
-    color: '#0f172a',
-    border: 'none',
-    padding: '10px',
-    borderRadius: '6px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-  },
-  secondaryBtn: {
-    flex: 1,
-    backgroundColor: '#334155',
-    color: '#ffffff',
-    border: 'none',
-    padding: '10px',
-    borderRadius: '6px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
   },
   proProfileCard: {
     backgroundColor: '#1e293b',
+    borderRadius: '12px',
     padding: '16px',
-    borderRadius: '8px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
   },
   proHeader: {
     display: 'flex',
-    gap: '16px',
     alignItems: 'center',
+    gap: '16px',
   },
   avatarCircle: {
     width: '60px',
     height: '60px',
     borderRadius: '50%',
-    backgroundColor: '#38bdf8',
-    color: '#0f172a',
+    backgroundColor: '#0284c7',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1361,17 +1378,15 @@ const styles = {
     color: '#94a3b8',
   },
   proBioSection: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
+    marginTop: '12px',
   },
   proUsername: {
     margin: 0,
     fontSize: '16px',
   },
   proBioText: {
-    margin: 0,
     fontSize: '13px',
+    margin: '4px 0',
     color: '#cbd5e1',
   },
   proWebsite: {
@@ -1380,56 +1395,53 @@ const styles = {
     textDecoration: 'none',
   },
   editProfileBtn: {
-    width: '100%',
     backgroundColor: '#334155',
-    color: '#ffffff',
+    color: '#fff',
     border: 'none',
-    padding: '8px',
+    padding: '6px 12px',
     borderRadius: '6px',
-    fontWeight: 'bold',
+    fontSize: '12px',
     cursor: 'pointer',
+    width: '100%',
   },
   profileBox: {
+    marginTop: '12px',
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
-    marginTop: '10px',
   },
   subTabRow: {
     display: 'flex',
     gap: '10px',
     marginTop: '16px',
+    borderBottom: '1px solid #1e293b',
   },
   subTab: {
-    flex: 1,
-    backgroundColor: '#1e293b',
-    color: '#94a3b8',
+    background: 'none',
     border: 'none',
-    padding: '10px',
-    borderRadius: '6px',
+    color: '#64748b',
+    padding: '8px 12px',
     cursor: 'pointer',
   },
   activeSubTab: {
-    flex: 1,
-    backgroundColor: '#334155',
-    color: '#ffffff',
-    border: 'none',
-    padding: '10px',
-    borderRadius: '6px',
+    background: 'none',
+    borderBottom: '2px solid #0284c7',
+    color: '#38bdf8',
+    padding: '8px 12px',
     fontWeight: 'bold',
     cursor: 'pointer',
   },
   mediaGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '8px',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: '4px',
     marginTop: '12px',
   },
   gridItem: {
     aspectRatio: '1',
     backgroundColor: '#1e293b',
-    borderRadius: '6px',
     overflow: 'hidden',
+    borderRadius: '4px',
   },
   gridMedia: {
     width: '100%',
@@ -1437,57 +1449,53 @@ const styles = {
     objectFit: 'cover',
   },
   textTile: {
-    padding: '8px',
+    padding: '4px',
     fontSize: '10px',
     overflow: 'hidden',
-    height: '100%',
   },
   bottomLeftMenuWrapper: {
     position: 'fixed',
     bottom: '80px',
     left: '16px',
-    zIndex: 20,
   },
   threeDotBtn: {
     backgroundColor: '#1e293b',
-    color: '#ffffff',
-    border: '1px solid #334155',
+    color: '#fff',
+    border: 'none',
     borderRadius: '50%',
-    width: '40px',
-    height: '40px',
-    fontSize: '18px',
+    width: '36px',
+    height: '36px',
     cursor: 'pointer',
   },
   settingsDropdown: {
     position: 'absolute',
-    bottom: '50px',
-    left: '0',
+    bottom: '45px',
+    left: 0,
     backgroundColor: '#1e293b',
     border: '1px solid #334155',
     borderRadius: '6px',
-    padding: '8px',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+    padding: '4px',
   },
   dangerBtn: {
     backgroundColor: '#ef4444',
-    color: '#ffffff',
+    color: '#fff',
     border: 'none',
-    padding: '8px 16px',
+    padding: '6px 12px',
     borderRadius: '4px',
     cursor: 'pointer',
+    fontSize: '12px',
   },
   createPostContainer: {
     position: 'fixed',
     bottom: '80px',
     right: '16px',
-    zIndex: 20,
   },
   createPostBtn: {
-    backgroundColor: '#38bdf8',
-    color: '#0f172a',
+    backgroundColor: '#0284c7',
+    color: '#fff',
     border: 'none',
-    padding: '12px 20px',
-    borderRadius: '30px',
+    padding: '10px 16px',
+    borderRadius: '20px',
     fontWeight: 'bold',
     cursor: 'pointer',
     boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
@@ -1502,77 +1510,33 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 100,
+    zIndex: 20,
     padding: '16px',
   },
   modalCard: {
     backgroundColor: '#1e293b',
-    width: '100%',
-    maxWidth: '500px',
-    borderRadius: '8px',
     padding: '20px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
+    borderRadius: '12px',
+    width: '100%',
+    maxWidth: '400px',
+    maxHeight: '80vh',
+    overflowY: 'auto',
   },
   closeBtn: {
-    backgroundColor: 'transparent',
+    background: 'none',
     border: 'none',
-    color: '#94a3b8',
-    fontSize: '18px',
+    color: '#fff',
     cursor: 'pointer',
   },
   commentsList: {
-    maxHeight: '200px',
-    overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
+    margin: '12px 0',
   },
   commentItem: {
     backgroundColor: '#0f172a',
     padding: '8px',
-    borderRadius: '4px',
-  },
-  previewContainer: {
-    width: '100%',
-    maxHeight: '200px',
-    overflow: 'hidden',
     borderRadius: '6px',
-  },
-  previewMedia: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  },
-  fileInput: {
-    color: '#94a3b8',
-  },
-  navDock: {
-    position: 'fixed',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#0f172a',
-    borderTop: '1px solid #1e293b',
-    display: 'flex',
-    justifyContent: 'space-around',
-    padding: '12px 0',
-    zIndex: 10,
-  },
-  tab: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: '#94a3b8',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-  activeTab: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    color: '#38bdf8',
-    fontSize: '14px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
   },
 };
