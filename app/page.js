@@ -2166,3 +2166,1062 @@ const styles = {
     borderRadius: '6px',
   },
 };
+
+
+
+/* KINETIX MASTER REDESIGN v2
+   Based on:
+   - the supplied KINETIX React JSX
+   - the supplied KINETIX shared-chat PDF
+   - the six additional requirements supplied by the user
+
+   This layer is intentionally additive: existing KINETIX UI/components remain
+   available, while the selected product structure and persistence helpers are
+   exported for integration into the existing screens.
+
+   PDF-selected product concepts:
+   AI-powered interactive posts
+   Rooms / Communities
+   Find people by what they're building
+   Hyperlocal discovery
+   Remix Anything
+   Multiple Feeds
+   Reputation / Contribution system
+
+   Existing-request fixes:
+   profile navigation from followers/following
+   complete comments
+   follow-gated DMs
+   persistent DM history
+   persistent follows
+   real resharing
+============================================================================ */
+
+export const KINETIX_MASTER_REDESIGN_VERSION = "v2-2026-09-09";
+
+/* --------------------------------------------------------------------------
+   1. PRODUCT NAVIGATION / INFORMATION ARCHITECTURE
+-------------------------------------------------------------------------- */
+
+export const KINETIX_NAVIGATION = {
+  home: [
+    "For You",
+    "Following",
+    "Trending",
+    "Latest",
+    "Learning",
+    "Projects",
+  ],
+  discover: [
+    "People",
+    "Communities",
+    "Projects",
+    "Hashtags",
+    "Local",
+    "Trending",
+  ],
+  create: [
+    "Normal Post",
+    "Interactive / AI Post",
+    "Challenge",
+    "Poll",
+    "Question",
+    "Project",
+    "Remix",
+  ],
+  messages: [
+    "Conversations",
+    "Persistent History",
+    "Text",
+    "Pictures",
+    "Voice Notes",
+  ],
+  profile: [
+    "Posts",
+    "Replies",
+    "Reposts",
+    "Projects",
+    "Followers",
+    "Following",
+    "Reputation",
+    "Badges",
+    "Communities",
+  ],
+};
+
+export const KINETIX_ACTIVITY = [
+  "Trending",
+  "Challenges",
+  "Collaborate",
+  "Learn",
+  "Competitions",
+  "Local",
+  "Communities",
+  "Projects",
+  "Live",
+  "Marketplace",
+];
+
+/* --------------------------------------------------------------------------
+   2. SHARED SUPABASE HELPERS
+-------------------------------------------------------------------------- */
+
+async function kinetixRequireAuth(supabase) {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!data?.user) throw new Error("You must be signed in.");
+  return data.user;
+}
+
+export async function kinetixGetProfile(supabase, userId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/* --------------------------------------------------------------------------
+   3. FOLLOWERS / FOLLOWING — REAL PROFILE NAVIGATION
+-------------------------------------------------------------------------- */
+
+export async function kinetixGetFollowers(supabase, userId) {
+  const { data, error } = await supabase
+    .from("follows")
+    .select("follower_id")
+    .eq("following_id", userId);
+
+  if (error) throw error;
+
+  return (data || []).map((row) => row.follower_id);
+}
+
+export async function kinetixGetFollowing(supabase, userId) {
+  const { data, error } = await supabase
+    .from("follows")
+    .select("following_id")
+    .eq("follower_id", userId);
+
+  if (error) throw error;
+
+  return (data || []).map((row) => row.following_id);
+}
+
+export async function kinetixIsFollowing(
+  supabase,
+  followerId,
+  followingId
+) {
+  const { data, error } = await supabase
+    .from("follows")
+    .select("follower_id")
+    .eq("follower_id", followerId)
+    .eq("following_id", followingId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function kinetixToggleFollow(
+  supabase,
+  followerId,
+  followingId
+) {
+  if (!followerId || !followingId || followerId === followingId) {
+    throw new Error("Invalid follow request.");
+  }
+
+  const alreadyFollowing = await kinetixIsFollowing(
+    supabase,
+    followerId,
+    followingId
+  );
+
+  if (alreadyFollowing) {
+    const { error } = await supabase
+      .from("follows")
+      .delete()
+      .eq("follower_id", followerId)
+      .eq("following_id", followingId);
+
+    if (error) throw error;
+    return false;
+  }
+
+  const { error } = await supabase.from("follows").insert({
+    follower_id: followerId,
+    following_id: followingId,
+  });
+
+  if (error) throw error;
+  return true;
+}
+
+/* A reusable profile list. Pass navigateToProfile from your existing router. */
+export function KinetixPeopleList({
+  users = [],
+  title = "People",
+  onOpenProfile,
+}) {
+  return (
+    <section className="kinetix-people-list">
+      <h2>{title}</h2>
+
+      {users.length === 0 ? (
+        <p>No users found.</p>
+      ) : (
+        users.map((user) => (
+          <button
+            type="button"
+            key={user.id}
+            className="kinetix-person-row"
+            onClick={() => onOpenProfile?.(user.id)}
+          >
+            {user.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt=""
+                className="kinetix-person-avatar"
+              />
+            ) : (
+              <span className="kinetix-person-avatar-placeholder">
+                {(user.username || user.full_name || "?")
+                  .slice(0, 1)
+                  .toUpperCase()}
+              </span>
+            )}
+
+            <span>
+              <strong>
+                {user.full_name || user.username || "KINETIX user"}
+              </strong>
+              {user.username && <small>@{user.username}</small>}
+            </span>
+          </button>
+        ))
+      )}
+    </section>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   4. COMMENTS — SHOW THE COMPLETE CONVERSATION
+-------------------------------------------------------------------------- */
+
+export async function kinetixGetComments(supabase, postId) {
+  const { data, error } = await supabase
+    .from("comments")
+    .select("*")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function kinetixAddComment(
+  supabase,
+  postId,
+  userId,
+  content
+) {
+  const value = String(content || "").trim();
+  if (!value) throw new Error("Comment cannot be empty.");
+
+  const { data, error } = await supabase
+    .from("comments")
+    .insert({
+      post_id: postId,
+      user_id: userId,
+      content: value,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export function KinetixCommentSection({
+  supabase,
+  postId,
+  currentUserId,
+}) {
+  const [comments, setComments] = React.useState([]);
+  const [text, setText] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [sending, setSending] = React.useState(false);
+
+  const loadComments = React.useCallback(async () => {
+    setLoading(true);
+
+    try {
+      setComments(await kinetixGetComments(supabase, postId));
+    } catch (error) {
+      console.error("KINETIX comments:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, postId]);
+
+  React.useEffect(() => {
+    loadComments();
+
+    const channel = supabase
+      .channel(`kinetix-comments-${postId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "comments",
+          filter: `post_id=eq.${postId}`,
+        },
+        loadComments
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, postId, loadComments]);
+
+  async function submitComment(event) {
+    event.preventDefault();
+
+    if (!text.trim() || !currentUserId) return;
+
+    setSending(true);
+
+    try {
+      await kinetixAddComment(
+        supabase,
+        postId,
+        currentUserId,
+        text
+      );
+
+      setText("");
+      await loadComments();
+    } catch (error) {
+      console.error("KINETIX add comment:", error);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="kinetix-comments">
+      <div className="kinetix-comments-list">
+        {loading ? (
+          <p>Loading comments…</p>
+        ) : comments.length === 0 ? (
+          <p>No comments yet.</p>
+        ) : (
+          comments.map((comment) => (
+            <article
+              key={comment.id}
+              className={
+                comment.user_id === currentUserId
+                  ? "kinetix-comment kinetix-comment-own"
+                  : "kinetix-comment"
+              }
+            >
+              <div className="kinetix-comment-body">
+                {comment.content}
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+
+      <form onSubmit={submitComment} className="kinetix-comment-composer">
+        <input
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="Write a comment…"
+          aria-label="Write a comment"
+        />
+
+        <button
+          type="submit"
+          disabled={sending || !text.trim()}
+        >
+          {sending ? "Posting…" : "Comment"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   5. DMs — FOLLOW FIRST, THEN CONVERSATION
+-------------------------------------------------------------------------- */
+
+export async function kinetixGetOrCreateConversation(
+  supabase,
+  currentUserId,
+  targetUserId
+) {
+  if (!currentUserId || !targetUserId) {
+    throw new Error("Conversation users are required.");
+  }
+
+  const following = await kinetixIsFollowing(
+    supabase,
+    currentUserId,
+    targetUserId
+  );
+
+  if (!following) {
+    throw new Error("Follow this user before messaging them.");
+  }
+
+  const { data: mine, error: mineError } = await supabase
+    .from("conversation_members")
+    .select("conversation_id")
+    .eq("user_id", currentUserId);
+
+  if (mineError) throw mineError;
+
+  const mineIds = (mine || []).map((row) => row.conversation_id);
+
+  if (mineIds.length) {
+    const { data: theirs, error: theirsError } = await supabase
+      .from("conversation_members")
+      .select("conversation_id")
+      .eq("user_id", targetUserId)
+      .in("conversation_id", mineIds);
+
+    if (theirsError) throw theirsError;
+
+    if (theirs?.length) return theirs[0].conversation_id;
+  }
+
+  const { data: conversation, error: conversationError } =
+    await supabase
+      .from("conversations")
+      .insert({})
+      .select()
+      .single();
+
+  if (conversationError) throw conversationError;
+
+  const { error: memberError } = await supabase
+    .from("conversation_members")
+    .insert([
+      {
+        conversation_id: conversation.id,
+        user_id: currentUserId,
+      },
+      {
+        conversation_id: conversation.id,
+        user_id: targetUserId,
+      },
+    ]);
+
+  if (memberError) throw memberError;
+
+  return conversation.id;
+}
+
+export async function kinetixGetMessages(
+  supabase,
+  conversationId
+) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function kinetixSendMessage(
+  supabase,
+  conversationId,
+  senderId,
+  {
+    type = "text",
+    text = "",
+    mediaUrl = null,
+  } = {}
+) {
+  if (!["text", "image", "voice"].includes(type)) {
+    throw new Error("Unsupported message type.");
+  }
+
+  if (!String(text || "").trim() && !mediaUrl) {
+    throw new Error("Message is empty.");
+  }
+
+  const { data, error } = await supabase
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      sender_id: senderId,
+      message_type: type,
+      content: String(text || "").trim() || null,
+      media_url: mediaUrl,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/* --------------------------------------------------------------------------
+   6. DM PAGE — CONVERSATION LIST + PERSISTENT HISTORY
+-------------------------------------------------------------------------- */
+
+export function KinetixDMWindow({
+  supabase,
+  conversationId,
+  currentUserId,
+  onUploadImage,
+  onUploadVoice,
+}) {
+  const [messages, setMessages] = React.useState([]);
+  const [text, setText] = React.useState("");
+  const [sending, setSending] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    try {
+      const history = await kinetixGetMessages(
+        supabase,
+        conversationId
+      );
+      setMessages(history);
+    } catch (error) {
+      console.error("KINETIX DM history:", error);
+    }
+  }, [supabase, conversationId]);
+
+  React.useEffect(() => {
+    load();
+
+    const channel = supabase
+      .channel(`kinetix-dm-${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          setMessages((current) =>
+            current.some((item) => item.id === payload.new.id)
+              ? current
+              : [...current, payload.new]
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, conversationId, load]);
+
+  async function sendText(event) {
+    event.preventDefault();
+
+    if (!text.trim()) return;
+
+    setSending(true);
+
+    try {
+      await kinetixSendMessage(
+        supabase,
+        conversationId,
+        currentUserId,
+        {
+          type: "text",
+          text,
+        }
+      );
+
+      setText("");
+      await load();
+    } catch (error) {
+      console.error("KINETIX send message:", error);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function sendImage(file) {
+    if (!file || !onUploadImage) return;
+
+    try {
+      const url = await onUploadImage(file);
+
+      await kinetixSendMessage(
+        supabase,
+        conversationId,
+        currentUserId,
+        {
+          type: "image",
+          mediaUrl: url,
+        }
+      );
+
+      await load();
+    } catch (error) {
+      console.error("KINETIX image message:", error);
+    }
+  }
+
+  async function sendVoice(file) {
+    if (!file || !onUploadVoice) return;
+
+    try {
+      const url = await onUploadVoice(file);
+
+      await kinetixSendMessage(
+        supabase,
+        conversationId,
+        currentUserId,
+        {
+          type: "voice",
+          mediaUrl: url,
+        }
+      );
+
+      await load();
+    } catch (error) {
+      console.error("KINETIX voice message:", error);
+    }
+  }
+
+  return (
+    <section className="kinetix-dm-window">
+      <div className="kinetix-dm-history">
+        {messages.map((message) => (
+          <article
+            key={message.id}
+            className={
+              message.sender_id === currentUserId
+                ? "kinetix-message kinetix-message-own"
+                : "kinetix-message"
+            }
+          >
+            {message.message_type === "image" &&
+            message.media_url ? (
+              <img
+                src={message.media_url}
+                alt="Shared in chat"
+                className="kinetix-chat-image"
+              />
+            ) : message.message_type === "voice" &&
+              message.media_url ? (
+              <audio controls src={message.media_url} />
+            ) : (
+              <span>{message.content}</span>
+            )}
+          </article>
+        ))}
+      </div>
+
+      <form
+        onSubmit={sendText}
+        className="kinetix-dm-composer"
+      >
+        <input
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="Message…"
+        />
+
+        <button
+          type="submit"
+          disabled={sending || !text.trim()}
+        >
+          Send
+        </button>
+
+        <label className="kinetix-media-button">
+          📷
+          <input
+            hidden
+            type="file"
+            accept="image/*"
+            onChange={(event) =>
+              sendImage(event.target.files?.[0])
+            }
+          />
+        </label>
+
+        <label className="kinetix-media-button">
+          🎙️
+          <input
+            hidden
+            type="file"
+            accept="audio/*"
+            onChange={(event) =>
+              sendVoice(event.target.files?.[0])
+            }
+          />
+        </label>
+      </form>
+    </section>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   7. REAL RESHARE / REPOST
+-------------------------------------------------------------------------- */
+
+export async function kinetixResharePost(
+  supabase,
+  userId,
+  originalPostId,
+  caption = ""
+) {
+  if (!userId || !originalPostId) {
+    throw new Error("Invalid post.");
+  }
+
+  const { data, error } = await supabase
+    .from("posts")
+    .insert({
+      user_id: userId,
+      content: String(caption || "").trim() || null,
+      repost_of: originalPostId,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export function KinetixReshareButton({
+  supabase,
+  currentUserId,
+  postId,
+  onReshared,
+}) {
+  const [busy, setBusy] = React.useState(false);
+
+  async function handleShare() {
+    if (busy) return;
+
+    setBusy(true);
+
+    try {
+      const repost = await kinetixResharePost(
+        supabase,
+        currentUserId,
+        postId
+      );
+
+      onReshared?.(repost);
+    } catch (error) {
+      console.error("KINETIX reshare:", error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleShare}
+      disabled={busy}
+    >
+      {busy ? "Sharing…" : "Share"}
+    </button>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   8. MULTIPLE FEEDS
+-------------------------------------------------------------------------- */
+
+export const KINETIX_FEEDS = [
+  {
+    id: "for-you",
+    label: "For You",
+    description: "Algorithmic discovery.",
+  },
+  {
+    id: "following",
+    label: "Following",
+    description: "Only people you follow.",
+  },
+  {
+    id: "trending",
+    label: "Trending",
+    description: "What's currently popular.",
+  },
+  {
+    id: "latest",
+    label: "Latest",
+    description: "Newest content.",
+  },
+  {
+    id: "learning",
+    label: "Learning",
+    description: "Educational content.",
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    description: "People building things.",
+  },
+  {
+    id: "local",
+    label: "Local",
+    description: "Public content from your chosen area.",
+  },
+];
+
+/* --------------------------------------------------------------------------
+   9. DISCOVER — PEOPLE / BUILDING / ROOMS / LOCAL / PROJECTS
+-------------------------------------------------------------------------- */
+
+export const KINETIX_DISCOVERY_TYPES = {
+  people: "People",
+  building: "People by what they're building",
+  communities: "Communities / Rooms",
+  projects: "Projects",
+  hashtags: "Hashtags",
+  local: "Local",
+  trending: "Trending",
+};
+
+export const KINETIX_CREATE_TYPES = {
+  normal: "Normal Post",
+  interactive: "Interactive / AI Post",
+  challenge: "Challenge",
+  poll: "Poll",
+  question: "Question",
+  project: "Project",
+  remix: "Remix",
+};
+
+/* --------------------------------------------------------------------------
+   10. AI INTERACTIVE POSTS
+-------------------------------------------------------------------------- */
+
+export const KINETIX_INTERACTIVE_POST_ACTIONS = [
+  "Ask a question",
+  "Learn with me",
+  "Quiz",
+  "Poll",
+  "Summarize",
+  "Translate",
+  "Turn video into notes",
+];
+
+export function KinetixInteractivePost({
+  title,
+  content,
+  children,
+  onAsk,
+}) {
+  return (
+    <article className="kinetix-interactive-post">
+      {title && <h3>{title}</h3>}
+      {content && <p>{content}</p>}
+
+      {children}
+
+      <div className="kinetix-interactive-actions">
+        {KINETIX_INTERACTIVE_POST_ACTIONS.map((action) => (
+          <button
+            type="button"
+            key={action}
+            onClick={() => onAsk?.(action)}
+          >
+            {action}
+          </button>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   11. ROOMS / COMMUNITIES
+-------------------------------------------------------------------------- */
+
+export const KINETIX_ROOM_FEATURES = [
+  "Text conversations",
+  "Voice conversations",
+  "Live streams",
+  "Polls",
+  "Files",
+  "Events",
+  "Challenges",
+  "Collaborative projects",
+];
+
+/* --------------------------------------------------------------------------
+   12. BUILD-TOGETHER / COLLABORATION / REMIX
+-------------------------------------------------------------------------- */
+
+export const KINETIX_COLLABORATION_TYPES = [
+  "Video editor",
+  "Guitarist",
+  "Designer",
+  "Developer",
+  "Marketer",
+  "Creator",
+];
+
+export const KINETIX_REMIX_TYPES = [
+  "Reaction",
+  "Response",
+  "Tutorial",
+  "Parody",
+  "Explanation",
+  "Continuation",
+  "Debate",
+  "Collaboration",
+];
+
+/* --------------------------------------------------------------------------
+   13. REPUTATION / CONTRIBUTION
+-------------------------------------------------------------------------- */
+
+export const KINETIX_REPUTATION_CATEGORIES = [
+  "Creator",
+  "Helpful",
+  "Expertise",
+  "Community",
+];
+
+export const KINETIX_CONTRIBUTION_ACTIONS = [
+  "Helping someone",
+  "Answering questions",
+  "Creating useful content",
+  "Completing challenges",
+  "Mentoring",
+  "Participating in community projects",
+];
+
+/* --------------------------------------------------------------------------
+   14. PROFILE DATA MODEL
+-------------------------------------------------------------------------- */
+
+export const KINETIX_PROFILE_SECTIONS = [
+  "Posts",
+  "Replies",
+  "Reposts",
+  "Projects",
+  "Followers",
+  "Following",
+  "Reputation",
+  "Badges",
+  "Communities",
+];
+
+/* --------------------------------------------------------------------------
+   15. OPTIONAL CSS FOR THE NEW ADDITIVE COMPONENTS
+   Add this string to your existing global stylesheet or inject it once.
+-------------------------------------------------------------------------- */
+
+export const KINETIX_MASTER_REDESIGN_CSS = `
+.kinetix-people-list,
+.kinetix-comments,
+.kinetix-dm-window,
+.kinetix-interactive-post {
+  width: 100%;
+}
+
+.kinetix-person-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.kinetix-person-row small {
+  display: block;
+  opacity: .65;
+  margin-top: 2px;
+}
+
+.kinetix-person-avatar,
+.kinetix-person-avatar-placeholder {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kinetix-comments-list,
+.kinetix-dm-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kinetix-comment,
+.kinetix-message {
+  max-width: 82%;
+  padding: 10px 13px;
+  border-radius: 14px;
+  align-self: flex-start;
+}
+
+.kinetix-comment-own,
+.kinetix-message-own {
+  align-self: flex-end;
+}
+
+.kinetix-comment-composer,
+.kinetix-dm-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.kinetix-comment-composer input,
+.kinetix-dm-composer input {
+  flex: 1;
+  min-width: 0;
+}
+
+.kinetix-chat-image {
+  display: block;
+  max-width: 280px;
+  max-height: 360px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.kinetix-media-button {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kinetix-interactive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+`;
