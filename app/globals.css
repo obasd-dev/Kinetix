@@ -1,7 +1,3 @@
-/* KINETIX global foundation
-   Keep this file if your page.js contains component-level styles.
-*/
-
 :root {
   color-scheme: dark;
   --kinetix-bg: #0b1020;
