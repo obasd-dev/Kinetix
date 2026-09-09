@@ -383,7 +383,6 @@ export default function Home() {
       setPreviewUrl(null);
       setShowCreateModal(false);
       
-      // Fetch fresh post feed immediately
       await fetchPosts();
     } catch (err) {
       alert(err.message);
