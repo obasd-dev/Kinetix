@@ -19,6 +19,8 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  const [authMessageType, setAuthMessageType] = useState('info');
 
   // Profile Setup State
   const [username, setUsername] = useState('');
@@ -374,45 +376,177 @@ export default function Home() {
 
   const handleGoogleSignIn = async () => {
     try {
+      setAuthMessage('');
+      // Force Google's account chooser so users can choose among the
+      // Google accounts available to the browser/device session.
+      // A website cannot directly enumerate every Gmail account stored
+      // on an Android phone; Google controls the account chooser.
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: typeof window !== 'undefined' ? window.location.origin : '',
+          queryParams: {
+            prompt: 'select_account',
+          },
         },
       });
+
       if (error) throw error;
     } catch (err) {
-      alert(err.message);
+      console.error('Google Sign-In Error:', err);
+      setAuthMessage(err?.message || 'Google sign-in could not be started.');
+      setAuthMessageType('error');
     }
   };
 
   const handleSignUp = async (e) => {
     e.preventDefault();
-    if (!email || !password) return alert('Please enter email and password.');
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
+      setAuthMessage('Please enter your email and password.');
+      setAuthMessageType('error');
+      return;
+    }
+
+    if (password.length < 6) {
+      setAuthMessage('Password must be at least 6 characters.');
+      setAuthMessageType('error');
+      return;
+    }
+
+    setAuthMessage('');
+
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        emailRedirectTo:
+          typeof window !== 'undefined' ? window.location.origin : undefined,
+      },
+    });
 
     if (error) {
-      alert(error.message);
-    } else if (data?.session) {
-      alert('Account created and logged in!');
-      setEmail('');
-      setPassword('');
-    } else {
-      alert('Account created! Please check your email inbox to confirm your account.');
-      setEmail('');
-      setPassword('');
+      console.error('Sign Up Error:', error);
+      setAuthMessage(error.message);
+      setAuthMessageType('error');
+      return;
     }
+
+    if (data?.session) {
+      setAuthMessage('Account created successfully. You are now signed in.');
+      setAuthMessageType('success');
+      setEmail('');
+      setPassword('');
+      return;
+    }
+
+    // Supabase returns a user but no session when email confirmation is enabled.
+    setAuthMessage(
+      `Account created for ${normalizedEmail}. Check your inbox and confirm your email before signing in.`
+    );
+    setAuthMessageType('success');
+    setEmail(normalizedEmail);
+    setPassword('');
   };
 
   const handleSignIn = async (e) => {
     e.preventDefault();
-    if (!email || !password) return alert('Please enter email and password.');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) alert(error.message);
-    else {
-      setEmail('');
-      setPassword('');
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
+      setAuthMessage('Please enter your email and password.');
+      setAuthMessageType('error');
+      return;
+    }
+
+    setAuthMessage('');
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
+
+    if (error) {
+      console.error('Sign In Error:', error);
+
+      const message = (error.message || '').toLowerCase();
+
+      if (
+        message.includes('invalid login credentials') ||
+        message.includes('invalid credentials')
+      ) {
+        setAuthMessage(
+          'Invalid login credentials. If you just signed up, confirm your email from your inbox first, then sign in again. You can also use Continue with Google.'
+        );
+      } else {
+        setAuthMessage(error.message || 'Unable to sign in.');
+      }
+
+      setAuthMessageType('error');
+      return;
+    }
+
+    setAuthMessage('');
+    setEmail('');
+    setPassword('');
+  };
+
+  const handleResendConfirmation = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      setAuthMessage('Enter your email address first.');
+      setAuthMessageType('error');
+      return;
+    }
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo:
+          typeof window !== 'undefined' ? window.location.origin : undefined,
+      },
+    });
+
+    if (error) {
+      console.error('Resend Confirmation Error:', error);
+      setAuthMessage(error.message);
+      setAuthMessageType('error');
+    } else {
+      setAuthMessage(
+        `A new confirmation email was sent to ${normalizedEmail}. Check Inbox and Spam.`
+      );
+      setAuthMessageType('success');
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      setAuthMessage('Enter your email address first, then tap Forgot password.');
+      setAuthMessageType('error');
+      return;
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo:
+        typeof window !== 'undefined' ? window.location.origin : undefined,
+    });
+
+    if (error) {
+      console.error('Password Reset Error:', error);
+      setAuthMessage(error.message);
+      setAuthMessageType('error');
+    } else {
+      setAuthMessage(
+        `If an account exists for ${normalizedEmail}, a password reset email has been sent.`
+      );
+      setAuthMessageType('success');
     }
   };
 
@@ -929,6 +1063,19 @@ export default function Home() {
 
                 <div style={styles.divider}>or with email</div>
 
+                {authMessage && (
+                  <div
+                    style={{
+                      ...styles.authMessage,
+                      ...(authMessageType === 'error'
+                        ? styles.authMessageError
+                        : styles.authMessageSuccess),
+                    }}
+                  >
+                    {authMessage}
+                  </div>
+                )}
+
                 <form style={styles.authForm}>
                   <input 
                     type="email" 
@@ -958,6 +1105,24 @@ export default function Home() {
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button type="button" onClick={handleSignIn} style={styles.primaryBtn}>Sign In</button>
                     <button type="button" onClick={handleSignUp} style={styles.secondaryBtn}>Sign Up</button>
+                  </div>
+
+                  <div style={styles.authLinksRow}>
+                    <button
+                      type="button"
+                      onClick={handleResendConfirmation}
+                      style={styles.authLinkBtn}
+                    >
+                      Resend confirmation
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      style={styles.authLinkBtn}
+                    >
+                      Forgot password?
+                    </button>
                   </div>
                 </form>
               </div>
@@ -1486,6 +1651,38 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
+  },
+  authMessage: {
+    padding: '10px 12px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    lineHeight: '1.4',
+    marginBottom: '10px',
+  },
+  authMessageError: {
+    backgroundColor: '#450a0a',
+    border: '1px solid #7f1d1d',
+    color: '#fecaca',
+  },
+  authMessageSuccess: {
+    backgroundColor: '#052e16',
+    border: '1px solid #166534',
+    color: '#bbf7d0',
+  },
+  authLinksRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  authLinkBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#38bdf8',
+    cursor: 'pointer',
+    padding: '4px 0',
+    fontSize: '12px',
+    textDecoration: 'underline',
   },
   input: {
     backgroundColor: '#0f172a',
