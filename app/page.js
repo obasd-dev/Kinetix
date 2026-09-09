@@ -603,9 +603,52 @@ export default function Home() {
     item.tag.includes(cleanedQuery.replace('#', ''))
   );
 
+  // IMPORTANT: Do not use url.includes('video') here.
+  // Supabase storage URLs contain the bucket name "videos", so that
+  // check incorrectly treats EVERY image as a video.
   const isVideoFile = (url) => {
-    if (!url) return false;
-    return Boolean(url.match(/\.(mp4|webm|ogg)$/i) || url.includes('video'));
+    if (!url || typeof url !== 'string') return false;
+
+    try {
+      const pathname = new URL(url, window.location.origin).pathname.toLowerCase();
+      return /\.(mp4|webm|ogg|mov|m4v|avi)$/i.test(pathname);
+    } catch {
+      return /\.(mp4|webm|ogg|mov|m4v|avi)(?:$|[?#])/i.test(url.toLowerCase());
+    }
+  };
+
+  const renderPostMedia = (post, className, alt = 'Post media') => {
+    if (!post?.video_url) return null;
+
+    const mediaUrl = post.video_url;
+
+    if (isVideoFile(mediaUrl)) {
+      return (
+        <video
+          src={mediaUrl}
+          controls
+          playsInline
+          preload="metadata"
+          style={className}
+          onError={(e) => {
+            console.error('Video failed to load:', mediaUrl, e.currentTarget.error);
+          }}
+        />
+      );
+    }
+
+    return (
+      <img
+        src={mediaUrl}
+        alt={alt}
+        loading="lazy"
+        style={className}
+        onError={(e) => {
+          console.error('Image failed to load:', mediaUrl);
+          e.currentTarget.style.display = 'none';
+        }}
+      />
+    );
   };
 
   const filteredPosts = posts.filter(post => {
@@ -665,13 +708,7 @@ export default function Home() {
                       )}
                     </div>
                     
-                    {post.video_url && (
-                      isVideo ? (
-                        <video src={post.video_url} controls style={styles.videoPlayer} />
-                      ) : (
-                        <img src={post.video_url} alt="Post media" style={styles.mediaImage} />
-                      )
-                    )}
+                    {renderPostMedia(post, isVideoFile(post.video_url) ? styles.videoPlayer : styles.mediaImage)}
                     
                     {post.caption && <p style={styles.captionText}>{post.caption}</p>}
 
@@ -806,11 +843,7 @@ export default function Home() {
                           </div>
 
                           {post.video_url && (
-                            isVideo ? (
-                              <video src={post.video_url} style={styles.searchGridMedia} />
-                            ) : (
-                              <img src={post.video_url} alt="Media preview" style={styles.searchGridMedia} />
-                            )
+                            renderPostMedia(post, styles.searchGridMedia, 'Media preview')
                           )}
 
                           <p style={styles.searchGridCaption}>{post.caption}</p>
@@ -1023,11 +1056,7 @@ export default function Home() {
                         style={styles.gridItemClickable}
                       >
                         {post.video_url ? (
-                          isVideoFile(post.video_url) ? (
-                            <video src={post.video_url} style={styles.gridMedia} />
-                          ) : (
-                            <img src={post.video_url} alt="Media preview" style={styles.gridMedia} />
-                          )
+                          renderPostMedia(post, styles.gridMedia, 'Media preview')
                         ) : (
                           <div style={styles.textTile}>{post.caption}</div>
                         )}
@@ -1124,11 +1153,7 @@ export default function Home() {
                 .map(post => (
                   <div key={post.id} style={styles.gridItem}>
                     {post.video_url ? (
-                      isVideoFile(post.video_url) ? (
-                        <video src={post.video_url} style={styles.gridMedia} />
-                      ) : (
-                        <img src={post.video_url} alt="Media" style={styles.gridMedia} />
-                      )
+                      renderPostMedia(post, styles.gridMedia, 'Media')
                     ) : (
                       <div style={styles.textTile}>{post.caption}</div>
                     )}
@@ -1383,12 +1408,19 @@ const styles = {
     borderRadius: '12px',
   },
   videoPlayer: {
+    display: 'block',
     width: '100%',
+    maxWidth: '100%',
     borderRadius: '8px',
+    backgroundColor: '#000',
   },
   mediaImage: {
+    display: 'block',
     width: '100%',
+    maxWidth: '100%',
+    height: 'auto',
     borderRadius: '8px',
+    objectFit: 'contain',
   },
   captionText: {
     margin: 0,
@@ -1832,6 +1864,7 @@ const styles = {
     borderRadius: '4px',
   },
   gridMedia: {
+    display: 'block',
     width: '100%',
     height: '100%',
     objectFit: 'cover',
