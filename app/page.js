@@ -48,7 +48,7 @@ export default function Home() {
   const [comments, setComments] = useState([]);
   const [newCommentText, setNewCommentText] = useState('');
 
-  // Selected Post Management Modal State (Edit/Delete/Reactions)
+  // Selected Post Management Modal State
   const [selectedPost, setSelectedPost] = useState(null);
   const [editCaption, setEditCaption] = useState('');
   const [postLikers, setPostLikers] = useState([]);
@@ -57,7 +57,6 @@ export default function Home() {
   const [viewingProfile, setViewingProfile] = useState(null);
   const [userFollows, setUserFollows] = useState([]);
 
-  // PWA Install Event Listener
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
@@ -66,22 +65,17 @@ export default function Home() {
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) {
-      alert('To install on iOS: Tap the Share icon at the bottom of Safari, then choose "Add to Home Screen". On Chrome, use the browser menu (⋮) -> "Install App".');
+      alert('To install on iOS: Tap Share -> Add to Home Screen. On Chrome: Tap Menu (⋮) -> Install App.');
       return;
     }
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setIsInstallable(false);
-    }
+    if (outcome === 'accepted') setIsInstallable(false);
     setDeferredPrompt(null);
   };
 
@@ -127,7 +121,7 @@ export default function Home() {
       .from('profiles')
       .select('username, bio, website')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (!error && data) {
       setUsername(data.username || '');
@@ -224,7 +218,6 @@ export default function Home() {
     setSelectedPost(post);
     setEditCaption(post.caption || '');
 
-    // Fetch reactions/likers for this post
     const { data } = await supabase
       .from('likes')
       .select('user_id, profiles(username)')
@@ -271,9 +264,7 @@ export default function Home() {
 
   const openUserProfileModal = async (userId) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    if (data) {
-      setViewingProfile(data);
-    }
+    if (data) setViewingProfile(data);
   };
 
   const handleGoogleSignIn = async () => {
@@ -380,8 +371,8 @@ export default function Home() {
         .insert([{
           user_id: user.id,
           video_url: mediaUrl,
-          caption,
-          post_type: postType
+          caption: caption || '',
+          post_type: postType || 'media'
         }]);
 
       if (insertError) throw insertError;
@@ -391,7 +382,9 @@ export default function Home() {
       setFile(null);
       setPreviewUrl(null);
       setShowCreateModal(false);
-      fetchPosts();
+      
+      // Fetch fresh post feed immediately
+      await fetchPosts();
     } catch (err) {
       alert(err.message);
     } finally {
@@ -429,11 +422,16 @@ export default function Home() {
     item.tag.includes(cleanedQuery.replace('#', ''))
   );
 
+  const isVideoFile = (url) => {
+    if (!url) return false;
+    return Boolean(url.match(/\.(mp4|webm|ogg)$/i) || url.includes('video'));
+  };
+
   const filteredPosts = posts.filter(post => {
     const captionLower = (post.caption || '').toLowerCase();
     const usernameLower = (post.profiles?.username || '').toLowerCase();
     const postTags = extractHashtags(post.caption);
-    const isVideo = post.video_url && post.video_url.match(/\.(mp4|webm|ogg)$/i);
+    const isVideo = isVideoFile(post.video_url);
 
     const matchesQuery = 
       captionLower.includes(cleanedQuery) ||
@@ -470,6 +468,7 @@ export default function Home() {
                 const isLiked = userLikes.includes(post.id);
                 const likeCount = post.likes ? post.likes.length : 0;
                 const commentCount = post.comments ? post.comments.length : 0;
+                const isVideo = isVideoFile(post.video_url);
 
                 return (
                   <div key={post.id} style={styles.feedCard}>
@@ -486,14 +485,14 @@ export default function Home() {
                     </div>
                     
                     {post.video_url && (
-                      post.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                      isVideo ? (
                         <video src={post.video_url} controls style={styles.videoPlayer} />
                       ) : (
                         <img src={post.video_url} alt="Post media" style={styles.mediaImage} />
                       )
                     )}
                     
-                    <p style={styles.captionText}>{post.caption}</p>
+                    {post.caption && <p style={styles.captionText}>{post.caption}</p>}
 
                     <div style={styles.interactionRow}>
                       <button 
@@ -605,7 +604,7 @@ export default function Home() {
                   <div style={styles.searchGrid}>
                     {filteredPosts.map((post) => {
                       const postTags = extractHashtags(post.caption);
-                      const isVideo = post.video_url && post.video_url.match(/\.(mp4|webm|ogg)$/i);
+                      const isVideo = isVideoFile(post.video_url);
 
                       return (
                         <div key={post.id} style={styles.searchGridCard}>
@@ -843,7 +842,7 @@ export default function Home() {
                         style={styles.gridItemClickable}
                       >
                         {post.video_url ? (
-                          post.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                          isVideoFile(post.video_url) ? (
                             <video src={post.video_url} style={styles.gridMedia} />
                           ) : (
                             <img src={post.video_url} alt="Media preview" style={styles.gridMedia} />
@@ -944,7 +943,7 @@ export default function Home() {
                 .map(post => (
                   <div key={post.id} style={styles.gridItem}>
                     {post.video_url ? (
-                      post.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                      isVideoFile(post.video_url) ? (
                         <video src={post.video_url} style={styles.gridMedia} />
                       ) : (
                         <img src={post.video_url} alt="Media" style={styles.gridMedia} />
@@ -959,7 +958,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* MANAGE MY POST MODAL (EDIT / DELETE / VIEW LIKES & COMMENTS) */}
+      {/* MANAGE MY POST MODAL */}
       {selectedPost && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
@@ -969,7 +968,7 @@ export default function Home() {
             </div>
 
             {selectedPost.video_url && (
-              selectedPost.video_url.match(/\.(mp4|webm|ogg)$/i) ? (
+              isVideoFile(selectedPost.video_url) ? (
                 <video src={selectedPost.video_url} controls style={{ width: '100%', borderRadius: '8px', margin: '10px 0' }} />
               ) : (
                 <img src={selectedPost.video_url} alt="Post media" style={{ width: '100%', borderRadius: '8px', margin: '10px 0' }} />
@@ -989,7 +988,7 @@ export default function Home() {
             </div>
 
             <h4 style={styles.sectionHeading}>Reactions ({postLikers.length})</h4>
-            <div style={{ display: 'flex', wrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
               {postLikers.length === 0 ? (
                 <span style={{ fontSize: '12px', color: '#94a3b8' }}>No likes yet</span>
               ) : (
@@ -1067,12 +1066,14 @@ export default function Home() {
 
             <div style={{ display: 'flex', gap: '10px', margin: '10px 0' }}>
               <button 
+                type="button"
                 onClick={() => setPostType('media')} 
                 style={postType === 'media' ? styles.primaryBtn : styles.secondaryBtn}
               >
                 Media Post
               </button>
               <button 
+                type="button"
                 onClick={() => setPostType('article')} 
                 style={postType === 'article' ? styles.primaryBtn : styles.secondaryBtn}
               >
