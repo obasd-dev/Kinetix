@@ -123,6 +123,7 @@ export default function Home() {
       .eq('id', user.id)
       .maybeSingle();
 
+    if (error) console.error("Profile Fetch Error:", error);
     if (!error && data) {
       setUsername(data.username || '');
       setBio(data.bio || '');
@@ -132,6 +133,7 @@ export default function Home() {
 
   const fetchProfiles = async () => {
     const { data, error } = await supabase.from('profiles').select('*');
+    if (error) console.error("Profiles Fetch Error:", error);
     if (!error && data) setProfiles(data);
   };
 
@@ -141,7 +143,11 @@ export default function Home() {
       .select('*, likes(id, user_id), comments(id, content, created_at, profiles(username)), profiles(username, bio, website)')
       .order('created_at', { ascending: false });
 
-    if (!error && data) setPosts(data);
+    if (error) {
+      console.error("Posts Fetch Error:", error.message);
+    } else if (data) {
+      setPosts(data);
+    }
   };
 
   const fetchUserLikes = async () => {
