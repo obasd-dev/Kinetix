@@ -80,22 +80,43 @@ export default function Home() {
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
+      const { data: { session }, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error('Session Fetch Error:', error);
+        return;
+      }
+
+      if (mounted) {
+        setUser(session?.user || null);
+      }
     };
+
     getSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (mounted) {
+          setUser(session?.user || null);
+        }
+      }
+    );
 
-    fetchPosts();
-    fetchProfiles();
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
+  // Load feed whenever authentication changes.
+  // This is important when RLS only allows authenticated users to read posts.
   useEffect(() => {
+    fetchPosts();
+    fetchProfiles();
+
     if (user) {
       fetchUserLikes();
       fetchUserProfile();
@@ -138,15 +159,91 @@ export default function Home() {
   };
 
   const fetchPosts = async () => {
-    const { data, error } = await supabase
-      .from('posts')
-      .select('*, likes(id, user_id), comments(id, content, created_at, profiles(username)), profiles(username, bio, website)')
-      .order('created_at', { ascending: false });
+    try {
+      // Fetch the posts independently instead of relying on Supabase's
+      // nested relationship query. A broken/missing FK relationship between
+      // posts and profiles can otherwise make the whole feed query fail.
+      const { data: postData, error: postError } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error("Posts Fetch Error:", error.message);
-    } else if (data) {
-      setPosts(data);
+      if (postError) {
+        console.error('Posts Fetch Error:', postError);
+        return;
+      }
+
+      const safePosts = postData || [];
+
+      if (safePosts.length === 0) {
+        setPosts([]);
+        return;
+      }
+
+      const postIds = safePosts.map(post => post.id);
+      const userIds = [...new Set(safePosts.map(post => post.user_id).filter(Boolean))];
+
+      const [
+        { data: profileData, error: profileError },
+        { data: likeData, error: likeError },
+        { data: commentData, error: commentError }
+      ] = await Promise.all([
+        userIds.length
+          ? supabase
+              .from('profiles')
+              .select('id, username, bio, website')
+              .in('id', userIds)
+          : Promise.resolve({ data: [], error: null }),
+
+        postIds.length
+          ? supabase
+              .from('likes')
+              .select('id, user_id, post_id')
+              .in('post_id', postIds)
+          : Promise.resolve({ data: [], error: null }),
+
+        postIds.length
+          ? supabase
+              .from('comments')
+              .select('id, user_id, post_id, content, created_at')
+              .in('post_id', postIds)
+              .order('created_at', { ascending: true })
+          : Promise.resolve({ data: [], error: null })
+      ]);
+
+      if (profileError) console.warn('Profile relation fetch warning:', profileError.message);
+      if (likeError) console.warn('Likes fetch warning:', likeError.message);
+      if (commentError) console.warn('Comments fetch warning:', commentError.message);
+
+      const profilesById = Object.fromEntries(
+        (profileData || []).map(profile => [profile.id, profile])
+      );
+
+      const likesByPost = {};
+      (likeData || []).forEach(like => {
+        if (!likesByPost[like.post_id]) likesByPost[like.post_id] = [];
+        likesByPost[like.post_id].push(like);
+      });
+
+      const commentsByPost = {};
+      (commentData || []).forEach(comment => {
+        if (!commentsByPost[comment.post_id]) commentsByPost[comment.post_id] = [];
+        commentsByPost[comment.post_id].push({
+          ...comment,
+          profiles: profilesById[comment.user_id] || null
+        });
+      });
+
+      const hydratedPosts = safePosts.map(post => ({
+        ...post,
+        profiles: profilesById[post.user_id] || null,
+        likes: likesByPost[post.id] || [],
+        comments: commentsByPost[post.id] || []
+      }));
+
+      setPosts(hydratedPosts);
+    } catch (error) {
+      console.error('Unexpected Posts Fetch Error:', error);
     }
   };
 
@@ -239,7 +336,8 @@ export default function Home() {
     const { error } = await supabase
       .from('posts')
       .update({ caption: editCaption })
-      .eq('id', selectedPost.id);
+      .eq('id', selectedPost.id)
+      .eq('user_id', user.id);
 
     if (error) {
       alert(error.message);
@@ -257,7 +355,8 @@ export default function Home() {
     const { error } = await supabase
       .from('posts')
       .delete()
-      .eq('id', selectedPost.id);
+      .eq('id', selectedPost.id)
+      .eq('user_id', user.id);
 
     if (error) {
       alert(error.message);
@@ -331,9 +430,11 @@ export default function Home() {
 
     if (error) alert(error.message);
     else {
-      alert('Profile updated successfully!');
+      await fetchUserProfile();
+      await fetchProfiles();
+      await fetchPosts();
       setIsEditingProfile(false);
-      fetchProfiles();
+      alert('Profile updated successfully!');
     }
   };
 
@@ -350,48 +451,123 @@ export default function Home() {
 
   const handleCreatePost = async (e) => {
     e.preventDefault();
-    if (!user) return alert('You must be logged in.');
+
+    if (!user?.id) {
+      alert('You must be logged in.');
+      return;
+    }
+
+    const trimmedCaption = caption.trim();
+
+    // Articles can be text-only. Media posts require either media or text.
+    if (postType === 'article' && !trimmedCaption && !file) {
+      alert('Please write your article content or attach a file.');
+      return;
+    }
+
+    if (postType !== 'article' && !file && !trimmedCaption) {
+      alert('Please add a photo, video, or caption.');
+      return;
+    }
 
     try {
       setUploading(true);
-      let mediaUrl = '';
 
+      let mediaUrl = null;
+      let uploadedPath = null;
+
+      // Upload media first, then save the exact public URL in posts.
       if (file) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const fileExt = file.name.includes('.')
+          ? file.name.split('.').pop().toLowerCase()
+          : 'bin';
+
+        const safeName = file.name
+          .replace(/[^a-zA-Z0-9._-]/g, '-')
+          .replace(/-+/g, '-');
+
+        const fileName = `${user.id}/${Date.now()}-${safeName || `upload.${fileExt}`}`;
+        uploadedPath = fileName;
+
         const { error: uploadError } = await supabase.storage
           .from('videos')
-          .upload(fileName, file);
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: file.type || undefined
+          });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) throw new Error(`Media upload failed: ${uploadError.message}`);
 
         const { data: publicUrlData } = supabase.storage
           .from('videos')
           .getPublicUrl(fileName);
 
-        mediaUrl = publicUrlData.publicUrl;
+        mediaUrl = publicUrlData?.publicUrl || null;
+
+        if (!mediaUrl) {
+          throw new Error('The media uploaded, but Supabase did not return a public URL.');
+        }
       }
 
-      const { error: insertError } = await supabase
+      // IMPORTANT:
+      // Use .select().single() so we get the actual database row that was
+      // created. This lets the UI show the new post immediately instead of
+      // depending only on a second network request.
+      const { data: createdPost, error: insertError } = await supabase
         .from('posts')
-        .insert([{
+        .insert({
           user_id: user.id,
           video_url: mediaUrl,
-          caption: caption || '',
+          caption: trimmedCaption,
           post_type: postType || 'media'
-        }]);
+        })
+        .select('*')
+        .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        // If the database insert fails after a successful upload, clean up
+        // the orphaned storage file.
+        if (uploadedPath) {
+          await supabase.storage.from('videos').remove([uploadedPath]);
+        }
+        throw new Error(`Post could not be saved: ${insertError.message}`);
+      }
 
-      alert(`${postType === 'article' ? 'Article' : 'Post'} published!`);
+      // Build the post exactly as the feed expects.
+      const localPost = {
+        ...createdPost,
+        profiles: {
+          id: user.id,
+          username: username || user.user_metadata?.user_name || user.email?.split('@')[0] || 'user',
+          bio,
+          website
+        },
+        likes: [],
+        comments: []
+      };
+
+      // Show the post immediately in Home + Profile.
+      setPosts(prevPosts => {
+        const withoutDuplicate = prevPosts.filter(post => post.id !== localPost.id);
+        return [localPost, ...withoutDuplicate];
+      });
+
+      // Reset composer only after the database insert succeeds.
       setCaption('');
       setFile(null);
       setPreviewUrl(null);
       setShowCreateModal(false);
-      
+
+      alert(`${postType === 'article' ? 'Article' : 'Post'} published successfully!`);
+
+      // Re-sync from Supabase in the background.
+      // If RLS prevents this read, fetchPosts will log the error without
+      // destroying the optimistic post already displayed above.
       await fetchPosts();
     } catch (err) {
-      alert(err.message);
+      console.error('Create Post Error:', err);
+      alert(err?.message || 'Something went wrong while publishing your post.');
     } finally {
       setUploading(false);
     }
@@ -1066,7 +1242,15 @@ export default function Home() {
           <div style={styles.modalCard}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3>Publish Content</h3>
-              <button onClick={() => { setShowCreateModal(false); setPreviewUrl(null); }} style={styles.closeBtn}>✕</button>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setFile(null);
+                  setPreviewUrl(null);
+                  setCaption('');
+                }}
+                style={styles.closeBtn}
+              >✕</button>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', margin: '10px 0' }}>
