@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://kmqkqdzzmyzkoltxnnqt.supabase.co';
@@ -17,6 +17,8 @@ export default function Home() {
   const [password, setPassword] = useState('');
   const [authMessage, setAuthMessage] = useState('');
   const [authMessageType, setAuthMessageType] = useState('info');
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('signin');
 
   // Posts & Feed State
   const [posts, setPosts] = useState([]);
@@ -24,14 +26,18 @@ export default function Home() {
   const [composerType, setComposerType] = useState('update');
   const [uploading, setUploading] = useState(false);
 
-  // Broadcast Editing State
+  // Post Editing State
   const [editingPostId, setEditingPostId] = useState(null);
-  const [editText, setEditText] = useState('');
+  const [editCaption, setEditCaption] = useState('');
 
   // Comments State
-  const [activeCommentsPostId, setActiveCommentsPostId] = useState(null);
-  const [commentsMap, setCommentsMap] = useState({});
+  const [activeCommentPostId, setActiveCommentPostId] = useState(null);
+  const [commentsMap, setCommentsMap] = useState({}); // { [postId]: [{ id, user, text, created_at }] }
   const [commentInput, setCommentInput] = useState('');
+
+  // Public Profile Viewer Modal State
+  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [isFollowingSelected, setIsFollowingSelected] = useState(false);
 
   // File Attachment & Preview State
   const [mediaFile, setMediaFile] = useState(null);
@@ -43,20 +49,11 @@ export default function Home() {
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [avatarFile, setAvatarFile] = useState(null);
-  const [cropPreview, setCropPreview] = useState(null);
-  const [croppedBlob, setCroppedBlob] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [reputation, setReputation] = useState(0);
   const [userLikes, setUserLikes] = useState([]);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-
-  // Broadcaster Profile Modal
-  const [selectedProfile, setSelectedProfile] = useState(null);
-  const [isFollowingSelected, setIsFollowingSelected] = useState(false);
-
-  // Canvas Ref for Photo Cropping
-  const canvasRef = useRef(null);
 
   // Discover Page State
   const [discoverSearch, setDiscoverSearch] = useState('');
@@ -92,7 +89,10 @@ export default function Home() {
     getSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) setUser(session?.user || null);
+      if (mounted) {
+        setUser(session?.user || null);
+        if (session?.user) setShowAuthModal(false);
+      }
     });
 
     return () => {
@@ -259,7 +259,7 @@ export default function Home() {
     if (userIds.length > 0) {
       const { data: profilesData } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url, bio, reputation')
+        .select('id, username, bio, reputation, avatar_url')
         .in('id', userIds);
 
       profileMap = Object.fromEntries(
@@ -273,60 +273,6 @@ export default function Home() {
         profiles: profileMap[post.user_id] || null,
       }))
     );
-  };
-
-  const fetchComments = async (postId) => {
-    const { data, error } = await supabase
-      .from('comments')
-      .select('id, post_id, user_id, content, created_at')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error('Failed to fetch comments:', error);
-      return;
-    }
-
-    const userIds = [...new Set((data || []).map(c => c.user_id))];
-    let profileMap = {};
-    if (userIds.length > 0) {
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', userIds);
-      profileMap = Object.fromEntries((profilesData || []).map(p => [p.id, p]));
-    }
-
-    const enrichedComments = (data || []).map(c => ({
-      ...c,
-      profile: profileMap[c.user_id] || null
-    }));
-
-    setCommentsMap(prev => ({ ...prev, [postId]: enrichedComments }));
-  };
-
-  const handleAddComment = async (postId) => {
-    if (!user?.id) {
-      alert('Please log in to comment.');
-      return;
-    }
-    if (!commentInput.trim()) return;
-
-    const { error } = await supabase
-      .from('comments')
-      .insert({
-        post_id: postId,
-        user_id: user.id,
-        content: commentInput.trim()
-      });
-
-    if (error) {
-      alert('Failed to submit comment: ' + error.message);
-      return;
-    }
-
-    setCommentInput('');
-    fetchComments(postId);
   };
 
   const fetchUserLikes = async () => {
@@ -358,6 +304,141 @@ export default function Home() {
     })));
   };
 
+  // BROADCAST EDIT & DELETE
+  const handleDeletePost = async (postId) => {
+    if (!confirm('Are you sure you want to delete this broadcast?')) return;
+
+    const { error } = await supabase.from('posts').delete().eq('id', postId).eq('user_id', user.id);
+
+    if (error) {
+      alert(`Could not delete post: ${error.message}`);
+      return;
+    }
+
+    setPosts(prev => prev.filter(p => p.id !== postId));
+  };
+
+  const handleStartEdit = (post) => {
+    setEditingPostId(post.id);
+    setEditCaption(post.caption || '');
+  };
+
+  const handleSaveEdit = async (postId) => {
+    if (!editCaption.trim()) return alert('Caption cannot be empty.');
+
+    const { error } = await supabase
+      .from('posts')
+      .update({ caption: editCaption.trim() })
+      .eq('id', postId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      alert(`Error updating broadcast: ${error.message}`);
+      return;
+    }
+
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, caption: editCaption.trim() } : p));
+    setEditingPostId(null);
+    setEditCaption('');
+  };
+
+  // COMMENTS SYSTEM
+  const toggleComments = async (postId) => {
+    if (activeCommentPostId === postId) {
+      setActiveCommentPostId(null);
+      return;
+    }
+
+    setActiveCommentPostId(postId);
+
+    const { data, error } = await supabase
+      .from('comments')
+      .select('id, user_id, comment_text, created_at, profiles(username, avatar_url)')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (!error) {
+      setCommentsMap(prev => ({ ...prev, [postId]: data || [] }));
+    }
+  };
+
+  const handleAddComment = async (postId) => {
+    if (!user?.id) {
+      setAuthMode('signin');
+      setShowAuthModal(true);
+      return;
+    }
+
+    if (!commentInput.trim()) return;
+
+    const { data, error } = await supabase
+      .from('comments')
+      .insert({
+        post_id: postId,
+        user_id: user.id,
+        comment_text: commentInput.trim(),
+      })
+      .select('id, user_id, comment_text, created_at, profiles(username, avatar_url)')
+      .single();
+
+    if (error) {
+      alert(`Could not post comment: ${error.message}`);
+      return;
+    }
+
+    setCommentsMap(prev => ({
+      ...prev,
+      [postId]: [...(prev[postId] || []), data]
+    }));
+    setCommentInput('');
+  };
+
+  // PUBLIC PROFILE VIEW & FOLLOW
+  const handleOpenAuthorProfile = async (authorProfile) => {
+    if (!authorProfile) return;
+
+    setSelectedProfile(authorProfile);
+
+    if (user?.id && authorProfile.id !== user.id) {
+      const { data } = await supabase
+        .from('follows')
+        .select('*')
+        .eq('follower_id', user.id)
+        .eq('following_id', authorProfile.id)
+        .maybeSingle();
+
+      setIsFollowingSelected(!!data);
+    } else {
+      setIsFollowingSelected(false);
+    }
+  };
+
+  const handleToggleFollow = async () => {
+    if (!user?.id) {
+      setAuthMode('signin');
+      setShowAuthModal(true);
+      return;
+    }
+
+    if (!selectedProfile?.id || selectedProfile.id === user.id) return;
+
+    if (isFollowingSelected) {
+      await supabase
+        .from('follows')
+        .delete()
+        .eq('follower_id', user.id)
+        .eq('following_id', selectedProfile.id);
+      setIsFollowingSelected(false);
+    } else {
+      await supabase
+        .from('follows')
+        .insert({ follower_id: user.id, following_id: selectedProfile.id });
+      setIsFollowingSelected(true);
+    }
+
+    fetchFollowCounts();
+  };
+
   const handleMediaSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -368,7 +449,7 @@ export default function Home() {
       video.onloadedmetadata = () => {
         window.URL.revokeObjectURL(video.src);
         if (video.duration > 60) {
-          alert('Video duration exceeds limit! Only videos of 1 minute (60 seconds) or less can be published.');
+          alert('Video duration must be 1 minute (60 seconds) or less.');
           return;
         }
         clearMediaPreview();
@@ -383,7 +464,7 @@ export default function Home() {
       setMediaType('image');
       setMediaPreview(URL.createObjectURL(file));
     } else {
-      alert('Please select a valid image or video file.');
+      alert('Please select an image or video file.');
     }
   };
 
@@ -397,35 +478,6 @@ export default function Home() {
     setMediaType(null);
   };
 
-  const handleAvatarSelect = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = canvasRef.current || document.createElement('canvas');
-        canvas.width = 500;
-        canvas.height = 500;
-        const ctx = canvas.getContext('2d');
-        
-        const minDim = Math.min(img.width, img.height);
-        const sx = (img.width - minDim) / 2;
-        const sy = (img.height - minDim) / 2;
-
-        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 500, 500);
-
-        canvas.toBlob((blob) => {
-          setCroppedBlob(blob);
-          setCropPreview(canvas.toDataURL('image/jpeg'));
-        }, 'image/jpeg', 0.9);
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-
   const handleSaveProfile = async () => {
     if (!user?.id) return;
 
@@ -434,12 +486,13 @@ export default function Home() {
     let finalAvatarUrl = avatarUrl;
 
     try {
-      if (croppedBlob) {
-        const fileName = `${user.id}-${Date.now()}.jpg`;
+      if (avatarFile) {
+        const fileExt = avatarFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
           .from('avatars')
-          .upload(fileName, croppedBlob, { upsert: true, contentType: 'image/jpeg' });
+          .upload(fileName, avatarFile, { upsert: true, contentType: avatarFile.type });
 
         if (uploadError) {
           throw new Error(`Avatar upload failed: ${uploadError.message}`);
@@ -475,8 +528,6 @@ export default function Home() {
       setReputation(Number(data?.reputation) || 0);
       setAvatarUrl(data?.avatar_url || '');
       setAvatarFile(null);
-      setCropPreview(null);
-      setCroppedBlob(null);
       setIsEditingProfile(false);
       alert('Profile updated successfully!');
     } catch (err) {
@@ -489,7 +540,8 @@ export default function Home() {
     e.preventDefault();
 
     if (!user?.id) {
-      alert('Please sign in to publish a broadcast.');
+      setAuthMode('signin');
+      setShowAuthModal(true);
       return;
     }
 
@@ -558,100 +610,12 @@ export default function Home() {
     }
   };
 
-  const handleUpdatePost = async (postId) => {
-    if (!editText.trim()) {
-      alert('Post content cannot be empty.');
-      return;
-    }
-
-    const { error } = await supabase
-      .from('posts')
-      .update({ caption: editText.trim() })
-      .eq('id', postId)
-      .eq('user_id', user.id);
-
-    if (error) {
-      alert('Failed to edit broadcast: ' + error.message);
-      return;
-    }
-
-    setEditingPostId(null);
-    setEditText('');
-    fetchPosts();
-  };
-
-  const handleDeletePost = async (postId) => {
-    if (!confirm('Are you sure you want to delete this broadcast?')) return;
-
-    const { error } = await supabase
-      .from('posts')
-      .delete()
-      .eq('id', postId)
-      .eq('user_id', user.id);
-
-    if (error) {
-      alert('Failed to delete broadcast: ' + error.message);
-      return;
-    }
-
-    fetchPosts();
-  };
-
-  const handleGoogleSignIn = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin
-      }
-    });
-
-    if (error) {
-      setAuthMessage(error.message);
-      setAuthMessageType('error');
-    }
-  };
-
-  const handleOpenUserProfile = async (profile) => {
-    if (!profile) return;
-    setSelectedProfile(profile);
-
-    if (user?.id) {
-      const { data } = await supabase
-        .from('follows')
-        .select('*')
-        .eq('follower_id', user.id)
-        .eq('following_id', profile.id)
-        .maybeSingle();
-
-      setIsFollowingSelected(!!data);
-    }
-  };
-
-  const handleToggleFollow = async (targetUserId) => {
-    if (!user?.id) {
-      alert('Please sign in to follow creators.');
-      return;
-    }
-
-    if (isFollowingSelected) {
-      await supabase
-        .from('follows')
-        .delete()
-        .eq('follower_id', user.id)
-        .eq('following_id', targetUserId);
-      setIsFollowingSelected(false);
-    } else {
-      await supabase
-        .from('follows')
-        .insert({ follower_id: user.id, following_id: targetUserId });
-      setIsFollowingSelected(true);
-    }
-
-    fetchFollowCounts();
-  };
-
   const handleCreateCommunity = (e) => {
     e.preventDefault();
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
     if (!communityName.trim()) return alert('Please enter a community name.');
     const newComm = {
       id: Date.now(),
@@ -668,7 +632,8 @@ export default function Home() {
 
   const handleLike = async (postId) => {
     if (!user?.id) {
-      alert('Please log in to react.');
+      setAuthMode('signin');
+      setShowAuthModal(true);
       return;
     }
 
@@ -705,6 +670,7 @@ export default function Home() {
 
     setAuthMessage('Signed in successfully.');
     setAuthMessageType('success');
+    setShowAuthModal(false);
   };
 
   const handleSignUp = async (e) => {
@@ -735,6 +701,7 @@ export default function Home() {
       setUsername(cleanEmail.split('@')[0]);
       setBio('');
       setReputation(0);
+      setShowAuthModal(false);
     }
 
     setAuthMessage(
@@ -743,6 +710,11 @@ export default function Home() {
         : 'Account created. Check your email if confirmation is required.'
     );
     setAuthMessageType('success');
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
   };
 
   const handleSendMessage = () => {
@@ -763,6 +735,8 @@ export default function Home() {
         body { margin: 0; padding: 0; background-color: #030008; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         .desktop-only { display: flex; }
         .mobile-only { display: none; }
+        .author-link { cursor: pointer; transition: opacity 0.2s; }
+        .author-link:hover { opacity: 0.8; text-decoration: underline; }
         @media (max-width: 768px) {
           .desktop-only { display: none !important; }
           .mobile-only { display: flex !important; }
@@ -777,6 +751,7 @@ export default function Home() {
           <h1 style={styles.logo}>BMAX</h1>
           <span style={styles.badge}>GLOBAL v2.6</span>
         </div>
+        
         <nav style={styles.topNav} className="desktop-only">
           {['home', 'discover', 'create', 'messages', 'profile'].map((tab) => (
             <button
@@ -792,7 +767,108 @@ export default function Home() {
             </button>
           ))}
         </nav>
+
+        <div>
+          {user ? (
+            <button onClick={handleSignOut} style={styles.secondaryBtn}>Sign Out</button>
+          ) : (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => { setAuthMode('signin'); setShowAuthModal(true); }} style={styles.primaryBtn}>
+                Sign In
+              </button>
+              <button onClick={() => { setAuthMode('signup'); setShowAuthModal(true); }} style={styles.secondaryBtn}>
+                Sign Up
+              </button>
+            </div>
+          )}
+        </div>
       </header>
+
+      {/* GLOBAL AUTHOR PUBLIC PROFILE MODAL */}
+      {selectedProfile && (
+        <div style={styles.modalOverlay} onClick={() => setSelectedProfile(null)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '18px' }}>👤 Public Profile</h3>
+              <button onClick={() => setSelectedProfile(null)} style={styles.closeBtn}>✕</button>
+            </div>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '16px' }}>
+              {selectedProfile.avatar_url ? (
+                <img src={selectedProfile.avatar_url} alt="Avatar" style={styles.avatarImg} />
+              ) : (
+                <div style={styles.avatar}>👤</div>
+              )}
+              <div>
+                <h3 style={{ margin: 0, color: '#c084fc' }}>@{selectedProfile.username || 'builder'}</h3>
+                <p style={{ margin: '4px 0', fontSize: '13px', color: '#94a3b8' }}>{selectedProfile.bio || 'No bio provided.'}</p>
+                <div style={{ color: '#fbbf24', fontSize: '12px', fontWeight: 'bold' }}>🛡️ {selectedProfile.reputation || 0} Rep PTS</div>
+              </div>
+            </div>
+            {user?.id !== selectedProfile.id && (
+              <button
+                onClick={handleToggleFollow}
+                style={{ ...styles.primaryBtn, width: '100%', backgroundColor: isFollowingSelected ? '#374151' : '#7e22ce' }}
+              >
+                {isFollowingSelected ? '✓ Following' : '➕ Follow Broadcaster'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL AUTH MODAL */}
+      {showAuthModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowAuthModal(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '18px' }}>
+                {authMode === 'signin' ? '🔑 Sign In to BMAX' : '🚀 Create your Account'}
+              </h3>
+              <button onClick={() => setShowAuthModal(false)} style={styles.closeBtn}>✕</button>
+            </div>
+
+            {authMessage && (
+              <div style={authMessageType === 'error' ? styles.errorBox : styles.successBox}>
+                {authMessage}
+              </div>
+            )}
+
+            <form style={styles.authForm}>
+              <input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={styles.input}
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={styles.input}
+              />
+              {authMode === 'signin' ? (
+                <button type="button" onClick={handleSignIn} style={{ ...styles.primaryBtn, width: '100%', marginTop: '8px' }}>
+                  Sign In
+                </button>
+              ) : (
+                <button type="button" onClick={handleSignUp} style={{ ...styles.primaryBtn, width: '100%', marginTop: '8px' }}>
+                  Sign Up (0 Rep)
+                </button>
+              )}
+            </form>
+
+            <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
+              {authMode === 'signin' ? (
+                <span>Don't have an account? <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode('signup'); }} style={{ color: '#c084fc', textDecoration: 'none' }}>Sign Up</a></span>
+              ) : (
+                <span>Already registered? <a href="#" onClick={(e) => { e.preventDefault(); setAuthMode('signin'); }} style={{ color: '#c084fc', textDecoration: 'none' }}>Sign In</a></span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MAIN VIEW */}
       <div style={styles.layoutContainer} className="responsive-grid">
@@ -814,9 +890,10 @@ export default function Home() {
                 {filteredPosts.map((post) => (
                   <div key={post.id} style={styles.postCard}>
                     <div style={styles.postHeader}>
-                      <div 
-                        style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                        onClick={() => handleOpenUserProfile(post.profiles)}
+                      <div
+                        className="author-link"
+                        onClick={() => handleOpenAuthorProfile(post.profiles)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                       >
                         {post.profiles?.avatar_url ? (
                           <img src={post.profiles.avatar_url} alt="Avatar" style={styles.feedAvatarImg} />
@@ -904,7 +981,7 @@ export default function Home() {
                   <div style={styles.avatar}>👤</div>
                 )}
                 <div style={{ flex: 1 }}>
-                  <h2 style={{ margin: 0, color: '#f8fafc', fontSize: '20px' }}>@{username || user?.email || 'builder'}</h2>
+                  <h2 style={{ margin: 0, color: '#f8fafc', fontSize: '20px' }}>@{username || user?.email || 'guest'}</h2>
                   <p style={{ color: '#94a3b8', fontSize: '13px', margin: '4px 0 12px 0' }}>{bio || 'No bio configured yet.'}</p>
                   <div style={styles.profileStatsRow}>
                     <div><strong>{followersCount}</strong> <small style={{ color: '#64748b' }}>Followers</small></div>
@@ -913,40 +990,43 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-              <div style={styles.profileActions}>
-                <button onClick={() => setIsEditingProfile(!isEditingProfile)} style={styles.primaryBtn}>
-                  {isEditingProfile ? 'Close Edit' : 'Edit Profile'}
-                </button>
-              </div>
-              {isEditingProfile && (
-                <div style={styles.editSection}>
-                  <input
-                    type="text"
-                    placeholder="Username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    style={styles.input}
-                  />
-                  <textarea
-                    placeholder="Bio"
-                    maxLength={200}
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    style={{ ...styles.textArea, minHeight: '60px' }}
-                  />
-                  <label style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    Profile Photo (500x500 recommended, auto-cropped to fit profile logo):
-                    <input type="file" accept="image/*" onChange={handleAvatarSelect} style={styles.input} />
-                  </label>
-                  {cropPreview && (
-                    <div style={{ textAlign: 'center', marginTop: '8px' }}>
-                      <p style={{ fontSize: '12px', color: '#c084fc', margin: '0 0 6px 0' }}>Crop Preview (500x500):</p>
-                      <img src={cropPreview} alt="Crop preview" style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #7e22ce' }} />
+
+              {!user ? (
+                <div style={{ marginTop: '16px', padding: '16px', backgroundColor: '#120b24', borderRadius: '12px', textAlign: 'center' }}>
+                  <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#94a3b8' }}>Sign in to customize your profile, build followers, and earn reputation.</p>
+                  <button onClick={() => { setAuthMode('signin'); setShowAuthModal(true); }} style={styles.primaryBtn}>Sign In / Sign Up</button>
+                </div>
+              ) : (
+                <>
+                  <div style={styles.profileActions}>
+                    <button onClick={() => setIsEditingProfile(!isEditingProfile)} style={styles.primaryBtn}>
+                      {isEditingProfile ? 'Close Edit' : 'Edit Profile'}
+                    </button>
+                  </div>
+                  {isEditingProfile && (
+                    <div style={styles.editSection}>
+                      <input
+                        type="text"
+                        placeholder="Username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        style={styles.input}
+                      />
+                      <textarea
+                        placeholder="Bio"
+                        maxLength={200}
+                        value={bio}
+                        onChange={(e) => setBio(e.target.value)}
+                        style={{ ...styles.textArea, minHeight: '60px' }}
+                      />
+                      <label style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        Profile Photo (500x500 recommended):
+                        <input type="file" accept="image/*" onChange={(e) => setAvatarFile(e.target.files[0])} style={styles.input} />
+                      </label>
+                      <button onClick={handleSaveProfile} style={{ ...styles.primaryBtn, marginTop: '8px' }}>Save Profile</button>
                     </div>
                   )}
-                  <canvas ref={canvasRef} style={{ display: 'none' }} />
-                  <button onClick={handleSaveProfile} style={{ ...styles.primaryBtn, marginTop: '8px' }}>Save Profile</button>
-                </div>
+                </>
               )}
             </div>
 
@@ -984,7 +1064,7 @@ export default function Home() {
                 )}
                 <div style={styles.composerFooter}>
                   <label style={styles.iconBtn}>
-                    📷 Attach Media (Max 1-min video)
+                    📷 Attach Media
                     <input type="file" accept="image/*,video/*" onChange={handleMediaSelect} style={{ display: 'none' }} />
                   </label>
                   <button type="submit" disabled={uploading} style={{ ...styles.broadcastBtn, opacity: uploading ? 0.65 : 1, cursor: uploading ? 'not-allowed' : 'pointer' }}>
@@ -1077,16 +1157,18 @@ export default function Home() {
                 ) : (
                   posts.map((post) => {
                     const isLiked = userLikes.includes(post.id);
-                    const isOwner = user?.id && post.user_id === user.id;
-                    const comments = commentsMap[post.id] || [];
-                    const isCommentsOpen = activeCommentsPostId === post.id;
+                    const isAuthor = user?.id === post.user_id;
+                    const isEditing = editingPostId === post.id;
+                    const isCommentsOpen = activeCommentPostId === post.id;
+                    const postComments = commentsMap[post.id] || [];
 
                     return (
                       <div key={post.id} style={styles.postCard}>
                         <div style={styles.postHeader}>
-                          <div 
-                            style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                            onClick={() => handleOpenUserProfile(post.profiles)}
+                          <div
+                            className="author-link"
+                            onClick={() => handleOpenAuthorProfile(post.profiles)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                           >
                             {post.profiles?.avatar_url ? (
                               <img src={post.profiles.avatar_url} alt="Avatar" style={styles.feedAvatarImg} />
@@ -1095,40 +1177,29 @@ export default function Home() {
                             )}
                             <span style={styles.username}>@{post.profiles?.username || 'builder'}</span>
                           </div>
+
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={styles.postType}>{post.post_type}</span>
-                            {isOwner && (
-                              <>
-                                <button 
-                                  onClick={() => {
-                                    setEditingPostId(post.id);
-                                    setEditText(post.caption || '');
-                                  }} 
-                                  style={{ ...styles.actionBtn, color: '#fbbf24' }}
-                                >
-                                  ✏️ Edit
-                                </button>
-                                <button 
-                                  onClick={() => handleDeletePost(post.id)} 
-                                  style={{ ...styles.actionBtn, color: '#f87171' }}
-                                >
-                                  🗑️ Delete
-                                </button>
-                              </>
+                            {isAuthor && !isEditing && (
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button onClick={() => handleStartEdit(post)} style={styles.iconActionBtn}>✏️</button>
+                                <button onClick={() => handleDeletePost(post.id)} style={styles.iconActionBtn}>🗑️</button>
+                              </div>
                             )}
                           </div>
                         </div>
 
-                        {editingPostId === post.id ? (
-                          <div style={{ marginBottom: '14px' }}>
+                        {/* POST CAPTION OR EDIT MODE */}
+                        {isEditing ? (
+                          <div style={{ marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <textarea
-                              value={editText}
-                              onChange={(e) => setEditText(e.target.value)}
-                              style={{ ...styles.textArea, minHeight: '70px', marginBottom: '8px' }}
+                              value={editCaption}
+                              onChange={(e) => setEditCaption(e.target.value)}
+                              style={{ ...styles.textArea, minHeight: '60px' }}
                             />
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <button onClick={() => handleUpdatePost(post.id)} style={styles.primaryBtn}>Save Edit</button>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                               <button onClick={() => setEditingPostId(null)} style={styles.secondaryBtn}>Cancel</button>
+                              <button onClick={() => handleSaveEdit(post.id)} style={styles.primaryBtn}>Save</button>
                             </div>
                           </div>
                         ) : (
@@ -1149,41 +1220,30 @@ export default function Home() {
                           <button onClick={() => handleLike(post.id)} style={styles.actionBtn}>
                             {isLiked ? '❤️ Liked' : '🤍 Like'}
                           </button>
-                          <button 
-                            onClick={() => {
-                              if (isCommentsOpen) {
-                                setActiveCommentsPostId(null);
-                              } else {
-                                setActiveCommentsPostId(post.id);
-                                fetchComments(post.id);
-                              }
-                            }} 
-                            style={styles.actionBtn}
-                          >
-                            💬 Comments ({comments.length})
+                          <button onClick={() => toggleComments(post.id)} style={styles.actionBtn}>
+                            💬 Comments {postComments.length > 0 ? `(${postComments.length})` : ''}
                           </button>
                           <button style={styles.actionBtn}>🔄 Remix</button>
                         </div>
 
                         {/* COMMENTS SECTION */}
                         {isCommentsOpen && (
-                          <div style={styles.commentSection}>
-                            <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#c084fc' }}>Discussion Comments</h4>
+                          <div style={styles.commentsContainer}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                              {comments.length === 0 ? (
-                                <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>No comments yet. Be the first to start the conversation!</p>
+                              {postComments.length === 0 ? (
+                                <span style={{ fontSize: '12px', color: '#64748b' }}>No comments yet. Be the first to start the conversation!</span>
                               ) : (
-                                comments.map((comment) => (
-                                  <div key={comment.id} style={styles.commentBox}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                      <strong style={{ fontSize: '12px', color: '#fbbf24' }}>
-                                        @{comment.profile?.username || 'builder'}
-                                      </strong>
-                                      <small style={{ fontSize: '10px', color: '#64748b' }}>
-                                        {formatRelativeTime(comment.created_at)}
-                                      </small>
+                                postComments.map((c) => (
+                                  <div key={c.id} style={styles.commentItem}>
+                                    <div
+                                      className="author-link"
+                                      onClick={() => handleOpenAuthorProfile(c.profiles)}
+                                      style={{ fontWeight: 'bold', color: '#c084fc', fontSize: '12px' }}
+                                    >
+                                      @{c.profiles?.username || 'builder'}:
                                     </div>
-                                    <p style={{ margin: 0, fontSize: '13px', color: '#f8fafc' }}>{comment.content}</p>
+                                    <div style={{ fontSize: '13px', color: '#f8fafc', flex: 1 }}>{c.comment_text}</div>
+                                    <small style={{ color: '#64748b', fontSize: '10px' }}>{formatRelativeTime(c.created_at)}</small>
                                   </div>
                                 ))
                               )}
@@ -1191,13 +1251,13 @@ export default function Home() {
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <input
                                 type="text"
-                                placeholder="Write a comment..."
+                                placeholder="Add a comment..."
                                 value={commentInput}
                                 onChange={(e) => setCommentInput(e.target.value)}
                                 style={{ ...styles.input, flex: 1, padding: '8px 12px' }}
                               />
                               <button onClick={() => handleAddComment(post.id)} style={styles.primaryBtn}>
-                                Comment
+                                Post
                               </button>
                             </div>
                           </div>
@@ -1226,16 +1286,6 @@ export default function Home() {
                       {authMessage}
                     </div>
                   )}
-
-                  <button 
-                    onClick={handleGoogleSignIn} 
-                    style={{ ...styles.primaryBtn, backgroundColor: '#4285F4', width: '100%', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                  >
-                    🌐 Continue with Google
-                  </button>
-
-                  <div style={{ textAlign: 'center', fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>or sign in with email</div>
-
                   <form style={styles.authForm}>
                     <input
                       type="email"
@@ -1268,39 +1318,6 @@ export default function Home() {
           </>
         )}
       </div>
-
-      {/* BROADCASTER PROFILE MODAL */}
-      {selectedProfile && (
-        <div style={styles.modalBackdrop} onClick={() => setSelectedProfile(null)}>
-          <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.profileHeader}>
-              {selectedProfile.avatar_url ? (
-                <img src={selectedProfile.avatar_url} alt="Avatar" style={styles.avatarImg} />
-              ) : (
-                <div style={styles.avatar}>👤</div>
-              )}
-              <div>
-                <h3 style={{ margin: 0, color: '#f8fafc' }}>@{selectedProfile.username || 'builder'}</h3>
-                <p style={{ margin: '4px 0', fontSize: '13px', color: '#94a3b8' }}>{selectedProfile.bio || 'No bio provided.'}</p>
-                <div style={{ color: '#fbbf24', fontSize: '13px', marginTop: '6px' }}>
-                  🛡️ {selectedProfile.reputation || 0} Reputation PTS
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
-              {user?.id !== selectedProfile.id && (
-                <button 
-                  onClick={() => handleToggleFollow(selectedProfile.id)} 
-                  style={isFollowingSelected ? styles.secondaryBtn : styles.primaryBtn}
-                >
-                  {isFollowingSelected ? 'Following' : 'Follow Broadcaster'}
-                </button>
-              )}
-              <button onClick={() => setSelectedProfile(null)} style={styles.secondaryBtn}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MOBILE BOTTOM NAVIGATION */}
       <nav style={styles.mobileNav} className="mobile-only">
@@ -1361,13 +1378,14 @@ const styles = {
   feedAvatarImg: { width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' },
   username: { color: '#c084fc', fontWeight: 'bold', fontSize: '14px' },
   postType: { fontSize: '10px', backgroundColor: '#120b24', border: '1px solid #1e1b4b', padding: '3px 8px', borderRadius: '6px', color: '#e879f9', textTransform: 'uppercase', fontWeight: 'bold' },
+  iconActionBtn: { backgroundColor: 'transparent', border: 'none', cursor: 'pointer', fontSize: '14px', opacity: 0.8 },
   postContent: { margin: '0 0 14px 0', lineHeight: '1.5', wordBreak: 'break-word', fontSize: '15px' },
   mediaWrapper: { borderRadius: '12px', overflow: 'hidden', backgroundColor: '#000', marginBottom: '14px', border: '1px solid #1e1b4b' },
   postMedia: { width: '100%', maxHeight: '420px', objectFit: 'cover', display: 'block' },
   postActions: { display: 'flex', gap: '20px', borderTop: '1px solid #1e1b4b', paddingTop: '12px' },
   actionBtn: { backgroundColor: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' },
-  commentSection: { marginTop: '14px', borderTop: '1px solid #1e1b4b', paddingTop: '12px' },
-  commentBox: { backgroundColor: '#030008', border: '1px solid #1e1b4b', padding: '8px 12px', borderRadius: '8px' },
+  commentsContainer: { marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #1e1b4b' },
+  commentItem: { backgroundColor: '#030008', padding: '8px 12px', borderRadius: '8px', border: '1px solid #120b24', display: 'flex', gap: '8px', alignItems: 'center' },
   sidebarTitle: { margin: '0 0 12px 0', fontSize: '15px', color: '#f8fafc' },
   authForm: { display: 'flex', flexDirection: 'column', gap: '10px' },
   input: { backgroundColor: '#030008', border: '1px solid #1e1b4b', color: '#fff', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', width: '100%' },
@@ -1381,8 +1399,6 @@ const styles = {
   profileStatsRow: { display: 'flex', gap: '20px', fontSize: '14px' },
   profileActions: { display: 'flex', gap: '8px', marginTop: '16px' },
   editSection: { marginTop: '16px', borderTop: '1px solid #1e1b4b', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' },
-  modalBackdrop: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-  modalCard: { backgroundColor: '#090514', border: '1px solid #1e1b4b', borderRadius: '16px', padding: '24px', width: '90%', maxWidth: '450px' },
   mobileNav: { position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#090514', borderTop: '1px solid #1e1b4b', justifyContent: 'space-around', padding: '12px 0', zIndex: 100 },
   mobileBtn: { backgroundColor: 'transparent', border: 'none', fontSize: '22px', padding: '4px' },
   activeMobileBtn: { backgroundColor: '#1e1b4b', border: '1px solid #7e22ce', fontSize: '22px', borderRadius: '10px', padding: '4px' },
@@ -1394,5 +1410,8 @@ const styles = {
   activeSubTab: { backgroundColor: 'transparent', border: 'none', color: '#fbbf24', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' },
   activityCard: { backgroundColor: '#030008', border: '1px solid #1e1b4b', padding: '12px', borderRadius: '8px', fontSize: '13px' },
   conversationCard: { backgroundColor: '#030008', border: '1px solid #1e1b4b', padding: '14px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' },
-  unreadBadge: { backgroundColor: '#7e22ce', color: '#fff', fontSize: '10px', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }
+  unreadBadge: { backgroundColor: '#7e22ce', color: '#fff', fontSize: '10px', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' },
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' },
+  modalContent: { backgroundColor: '#090514', border: '1px solid #7e22ce', borderRadius: '16px', padding: '24px', maxWidth: '400px', width: '100%', boxShadow: '0 10px 30px rgba(0,0,0,0.8)' },
+  closeBtn: { backgroundColor: 'transparent', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }
 };
